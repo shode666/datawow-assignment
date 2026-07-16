@@ -1,0 +1,59 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# build outputs
+dist/
+**/dist/
+.next/
+**/.next/
+out/
+**/out/
+coverage/
+**/coverage/
+
+# environment files
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.template
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.vercel/
+
+# NestJS
+*.tsbuildinfo
+
+# test
+.nyc_output/
+
+# cache
+.cache/
+.turbo/
+.eslintcache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# local Docker overrides
+docker-compose.override.yml
+
+# temporary files
+tmp/
+temp/
