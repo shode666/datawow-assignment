@@ -20,6 +20,7 @@ export default async function LoginPage() {
 
       <div className="relative z-10 flex w-full justify-center">
         <LoginForm />
+
       </div>
     </main>
   );

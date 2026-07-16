@@ -9,6 +9,7 @@ import { DATABASE } from '@/infra/database/database.constants';
 
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
+  hash: jest.fn(),
 }));
 
 describe('AuthService', () => {
@@ -16,6 +17,9 @@ describe('AuthService', () => {
 
   const dbMock = {
     select: jest.fn(),
+    insert: jest.fn(),
+    execute: jest.fn(),
+    transaction: jest.fn(),
   };
 
   const jwtServiceMock = {
@@ -47,6 +51,23 @@ describe('AuthService', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+    dbMock.select.mockReset();
+    dbMock.insert.mockReset();
+    dbMock.execute.mockReset();
+    dbMock.transaction.mockReset();
+
+    jwtServiceMock.signAsync.mockReset();
+    jwtServiceMock.verifyAsync.mockReset();
+
+    jest.mocked(bcrypt.compare).mockReset();
+    jest.mocked(bcrypt.hash).mockReset();
+
+    dbMock.transaction.mockImplementation(
+      async (
+        callback: (tx: typeof dbMock) => Promise<unknown>,
+      ) => callback(dbMock),
+    );
     const moduleRef = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -66,8 +87,6 @@ describe('AuthService', () => {
     }).compile();
 
     service = moduleRef.get(AuthService);
-
-    jest.clearAllMocks();
   });
 
   function mockDatabaseResult<T>(result: T[]) {
@@ -220,6 +239,132 @@ describe('AuthService', () => {
       await expect(
         service.refresh('refresh-token'),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('register', () => {
+    it('should create a user', async () => {
+      const createdUser = {
+        id: 'user-id',
+        email: 'user@example.com',
+        fullName: 'Normal User',
+        permissions: [1],
+        createdAt: new Date(),
+      };
+
+      dbMock.select
+        // ตรวจ email ซ้ำ
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        })
+        // มี user อยู่แล้ว จึงเป็น user ปกติ
+        .mockReturnValueOnce({
+          from: jest.fn().mockResolvedValue([
+            {
+              total: 1,
+            },
+          ]),
+        });
+
+      dbMock.insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([
+            createdUser,
+          ]),
+        }),
+      });
+
+      jest
+        .mocked(bcrypt.hash)
+        .mockResolvedValue('hashed-password' as never);
+
+      const result = await service.register({
+        email: 'USER@EXAMPLE.COM',
+        password: 'Password123',
+        fullName: 'Normal User',
+      });
+
+      expect(bcrypt.hash).toHaveBeenCalledWith(
+        'Password123',
+        12,
+      );
+
+      expect(result).toEqual(createdUser);
+    });
+
+    it('should reject duplicated email', async () => {
+      const selectLimit = jest
+        .fn()
+        .mockResolvedValue([
+          {
+            id: 'existing-user',
+          },
+        ]);
+
+      dbMock.select.mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: selectLimit,
+          }),
+        }),
+      });
+
+      await expect(
+        service.register({
+          email: 'user@example.com',
+          password: 'Password123',
+          fullName: 'Normal User',
+        }),
+      ).rejects.toThrow('Email is already registered');
+    });
+    it('should promote the first user to admin', async () => {
+      const createdUser = {
+        id: 'first-user-id',
+        email: 'admin@example.com',
+        fullName: 'First User',
+        permissions: [1, 2],
+        createdAt: new Date(),
+      };
+
+      const existingUserLimit = jest.fn().mockResolvedValue([]);
+
+      const countFrom = jest.fn().mockResolvedValue([
+        {
+          total: 0,
+        },
+      ]);
+
+      dbMock.select
+        // ครั้งแรก: ตรวจ email ซ้ำ
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: existingUserLimit,
+            }),
+          }),
+        })
+        // ครั้งที่สอง: นับจำนวน user
+        .mockReturnValueOnce({
+          from: countFrom,
+        });
+
+      dbMock.insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([createdUser]),
+        }),
+      });
+
+      const result = await service.register({
+        email: 'admin@example.com',
+        password: 'Password123',
+        fullName: 'First User',
+      });
+
+      expect(result.permissions).toEqual([1, 2]);
     });
   });
 });

@@ -1,11 +1,13 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { eq } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 
@@ -13,7 +15,9 @@ import { DATABASE } from '@/infra/database/database.constants';
 import type { AppDatabase } from '@/infra/database/database.types';
 import { users } from '@/infra/database/schema/users.schema';
 import type { LoginInput } from './dto/login.zod';
+import type { RegisterInput } from './dto/register.zod';
 import type { TokenPayload } from './types/token-payload.type';
+import { Permission } from '@/common/constants/permission.constant';
 
 @Injectable()
 export class AuthService {
@@ -154,5 +158,67 @@ export class AuthService {
       refreshToken,
       tokenType: 'Bearer',
     };
+  }
+
+  async register(input: RegisterInput) {
+    const normalizedEmail = input.email.trim().toLowerCase();
+    const passwordHash = await bcrypt.hash(input.password, 12);
+
+    return this.db.transaction(async (tx) => {
+      // ป้องกัน request สมัครพร้อมกันแล้วกลายเป็น admin มากกว่า 1 คน
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(918273645)`,
+      );
+
+      const [existingUser] = await tx
+        .select({
+          id: users.id,
+        })
+        .from(users)
+        .where(eq(users.email, normalizedEmail))
+        .limit(1);
+
+      if (existingUser) {
+        throw new ConflictException(
+          'Email is already registered',
+        );
+      }
+
+      const [userCount] = await tx
+        .select({
+          total: count(),
+        })
+        .from(users);
+
+      const isFirstUser = userCount.total === 0;
+
+      const permissions = isFirstUser
+        ? [Permission.USER, Permission.ADMIN]
+        : [Permission.USER];
+
+      const [createdUser] = await tx
+        .insert(users)
+        .values({
+          email: normalizedEmail,
+          passwordHash,
+          fullName: input.fullName.trim(),
+          permissions,
+        })
+        .returning({
+          id: users.id,
+          email: users.email,
+          fullName: users.fullName,
+          permissions: users.permissions,
+          createdAt: users.createdAt,
+        });
+
+      if (!createdUser) {
+        throw new InternalServerErrorException(
+          'Unable to create user',
+        );
+      }
+
+      return createdUser;
+    });
   }
 }

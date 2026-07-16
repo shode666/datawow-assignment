@@ -16,6 +16,9 @@ import {
   type LoginInput,
 } from './dto/login.zod';
 import { AuthService } from './auth.service';
+import { type RegisterInput, registerSchema } from './dto/register.zod';
+import { ConfigService } from '@nestjs/config';
+import ms, { StringValue } from 'ms';
 
 const REFRESH_COOKIE = 'refresh_token';
 
@@ -23,6 +26,7 @@ const REFRESH_COOKIE = 'refresh_token';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly config: ConfigService,
   ) {}
 
   @Post('login')
@@ -94,13 +98,31 @@ export class AuthController {
     );
   }
 
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  register(
+    @Body(new ZodValidationPipe(registerSchema))
+    input: RegisterInput,
+  ) {
+    return this.authService.register(input);
+  }
+
   private refreshCookieOptions() {
+    const expiresIn = this.config.getOrThrow<string>(
+    'JWT_REFRESH_EXPIRES_IN',
+    ) as StringValue;
+    const maxAge = ms(expiresIn);
+    if (typeof maxAge !== 'number') {
+      throw new Error(
+        'JWT_REFRESH_EXPIRES_IN must be a valid duration',
+      );
+    }
     return {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax' as const,
       path: '/auth',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge
     };
   }
 }

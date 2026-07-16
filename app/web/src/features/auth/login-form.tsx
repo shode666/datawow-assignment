@@ -20,6 +20,7 @@ import {
   loginSchema,
   type LoginInput,
 } from './login.zod';
+import Link from 'next/link';
 
 const { Title, Text } = Typography;
 
@@ -190,6 +191,14 @@ export function LoginForm() {
           Sign in
         </Button>
       </form>
+      <div className="mt-6 text-center">
+          <Text type="secondary">
+            ยังไม่มีบัญชี?{' '}
+            <Link href="/register" className="font-medium">
+              สมัครสมาชิก
+            </Link>
+          </Text>
+        </div>
     </Card>
   );
 }

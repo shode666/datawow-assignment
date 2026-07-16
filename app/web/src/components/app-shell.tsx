@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  SyncOutlined,
   HomeOutlined,
   LogoutOutlined,
+  InboxOutlined,
   MenuOutlined,
 } from '@ant-design/icons';
 import {
@@ -16,13 +18,18 @@ import {
 
 const { Text, Title } = Typography;
 
-interface AppShellProps {
+type User = {
+  id: string;
+  email: string;
+  fullName: string;
+  permissions: number[];
+};
+
+type AppShellProps = {
+  user: User;
   children: React.ReactNode;
-  user: {
-    fullName: string;
-    email: string;
-  } | null;
-}
+};
+type ViewMode = 'user' | 'admin';
 
 export function AppShell({
   children,
@@ -31,9 +38,63 @@ export function AppShell({
   const router = useRouter();
   const pathname = usePathname();
 
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('user');
 
+  const isAdmin = user.permissions.includes(2);
+
+  const menuItems = useMemo(() => {
+    const items = []
+    if(isAdmin){
+      items.push({
+        key: '/admin',
+        icon: <HomeOutlined />,
+        label: 'Home',
+      });
+      items.push({
+        key: '/history',
+        icon: <InboxOutlined />,
+        label: 'History',
+      });
+    }else{
+      items.push({
+        key: '/',
+        icon: <HomeOutlined />,
+        label: 'Home',
+      });
+    }
+
+    if (isAdmin) {
+      items.push({
+        key: '/switch',
+        icon: <SyncOutlined />,
+        label: viewMode === 'admin'
+                ? 'Switch to User'
+                : 'Switch to Admin',
+      });
+    }
+
+    return items;
+  }, [isAdmin, viewMode]);
+
+  const handleMenuClick = (info:any) => {
+    if (info.key === '/switch') {
+      const nextMode: ViewMode =
+      viewMode === 'admin' ? 'user' : 'admin';
+
+    setViewMode(nextMode);
+
+    router.push(
+      nextMode === 'admin' ? '/admin' : '/',
+    );
+
+    setMobileOpen(false);
+    }
+
+  };
   const logout = async () => {
     try {
       setLoggingOut(true);
@@ -79,17 +140,8 @@ export function AppShell({
         <Menu
           mode="inline"
           selectedKeys={[pathname]}
-          items={[
-            {
-              key: '/',
-              icon: <HomeOutlined />,
-              label: 'Home',
-              onClick: () => {
-                router.push('/');
-                setDrawerOpen(false);
-              },
-            },
-          ]}
+          items={menuItems}
+          onClick={handleMenuClick}
         />
       </div>
 
@@ -101,7 +153,7 @@ export function AppShell({
           loading={loggingOut}
           icon={<LogoutOutlined />}
           onClick={logout}
-          className="!flex !justify-start"
+          className="flex! justify-start!"
         >
           Logout
         </Button>
@@ -119,7 +171,7 @@ export function AppShell({
         placement="left"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={280}
+        size={280}
         styles={{
           body: {
             padding: 0,
@@ -136,7 +188,7 @@ export function AppShell({
             type="text"
             icon={<MenuOutlined />}
             onClick={() => setDrawerOpen(true)}
-            className="md:!hidden"
+            className="md:hidden!"
             aria-label="Open navigation"
           />
 

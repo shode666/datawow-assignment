@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -11,6 +12,23 @@ describe('AuthController', () => {
   const authServiceMock = {
     login: jest.fn(),
     refresh: jest.fn(),
+  };
+  const configServiceMock = {
+    getOrThrow: jest.fn((key: string) => {
+      const values: Record<string, string> = {
+        JWT_REFRESH_EXPIRES_IN: '7d',
+      };
+
+      return values[key];
+    }),
+
+    get: jest.fn((key: string) => {
+      const values: Record<string, string> = {
+        NODE_ENV: 'test',
+      };
+
+      return values[key];
+    }),
   };
 
   const responseMock = {
@@ -25,6 +43,10 @@ describe('AuthController', () => {
         {
           provide: AuthService,
           useValue: authServiceMock,
+        },
+        {
+          provide: ConfigService,
+          useValue: configServiceMock,
         },
       ],
     }).compile();
