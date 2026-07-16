@@ -15,6 +15,9 @@ import {
   Menu,
   Typography,
 } from 'antd';
+import { modeHome,
+  navigationRoutes,
+  type ViewMode } from '@/config/navigation';
 
 const { Text, Title } = Typography;
 
@@ -26,10 +29,9 @@ type User = {
 };
 
 type AppShellProps = {
-  user: User;
+  user: User|null;
   children: React.ReactNode;
 };
-type ViewMode = 'user' | 'admin';
 
 export function AppShell({
   children,
@@ -37,63 +39,56 @@ export function AppShell({
 }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('user');
 
-  const isAdmin = user.permissions.includes(2);
+  const isAdmin = user?.permissions.includes(2) ?? false;
+
+  const currentRoute =
+  navigationRoutes.find((route) =>
+    route.match(pathname),
+  ) ?? navigationRoutes[0];
+
+  const viewMode: ViewMode = currentRoute.mode;
+  const selectedKey = currentRoute.key;
 
   const menuItems = useMemo(() => {
-    const items = []
-    if(isAdmin){
-      items.push({
-        key: '/admin',
-        icon: <HomeOutlined />,
-        label: 'Home',
-      });
-      items.push({
-        key: '/history',
-        icon: <InboxOutlined />,
-        label: 'History',
-      });
-    }else{
-      items.push({
-        key: '/',
-        icon: <HomeOutlined />,
-        label: 'Home',
-      });
-    }
+  const items = navigationRoutes
+    .filter((route) => route.mode === viewMode)
+    .map((route) => ({
+      key: route.key,
+      icon: route.icon,
+      label: route.label,
+    }));
 
-    if (isAdmin) {
-      items.push({
-        key: '/switch',
-        icon: <SyncOutlined />,
-        label: viewMode === 'admin'
-                ? 'Switch to User'
-                : 'Switch to Admin',
-      });
-    }
+  if (isAdmin) {
+    items.push({
+      key: '/switch',
+      icon: <SyncOutlined />,
+      label:
+        viewMode === 'admin'
+          ? 'Switch to User'
+          : 'Switch to Admin',
+    });
+  }
 
-    return items;
-  }, [isAdmin, viewMode]);
+  return items;
+}, [isAdmin, viewMode]);
 
-  const handleMenuClick = (info:any) => {
-    if (info.key === '/switch') {
-      const nextMode: ViewMode =
-      viewMode === 'admin' ? 'user' : 'admin';
+  const handleMenuClick = ({ key }: {key: string}) => {
+      if (key === '/switch') {
+        const nextMode: ViewMode =
+          viewMode === 'admin'
+            ? 'user'
+            : 'admin';
 
-    setViewMode(nextMode);
+        router.push(modeHome[nextMode]);
+        setDrawerOpen(false);
 
-    router.push(
-      nextMode === 'admin' ? '/admin' : '/',
-    );
-
-    setMobileOpen(false);
-    }
-
+        return;
+      }
+      router.push(key);
+      setDrawerOpen(false);
   };
   const logout = async () => {
     try {
@@ -115,7 +110,7 @@ export function AppShell({
       <div className="border-b border-slate-200 px-5 py-5">
         <Title
           level={4}
-          className="!mb-1"
+          className="mb-1!"
         >
           Application
         </Title>
@@ -139,7 +134,7 @@ export function AppShell({
       <div className="flex-1 py-3">
         <Menu
           mode="inline"
-          selectedKeys={[pathname]}
+          selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={handleMenuClick}
         />
@@ -193,7 +188,7 @@ export function AppShell({
           />
 
           <span className="ml-2 font-medium md:ml-0">
-            Home
+            {currentRoute.label}
           </span>
         </header>
 

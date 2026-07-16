@@ -17,8 +17,10 @@ export default function RegisterPage() {
               สมัครสมาชิกเพื่อจองที่นั่ง
             </h2>
 
-            <p className="mt-5 text-lg leading-8 text-slate-500">
-              บัญชีแรกที่สมัครในระบบจะได้รับสิทธิ์ Admin โดยอัตโนมัติ
+            <p className="mt-5 text-md leading-8 text-slate-500">
+              บัญชีแรกที่สมัครในระบบจะได้รับสิทธิ์ Admin + User โดยอัตโนมัติ<br/>
+              บัญชีที่ 2 ที่สมัครในระบบจะได้รับสิทธิ์ Admin โดยอัตโนมัติ<br/>
+              หลังจากนั้นจะได้รับสิทธิ์ User โดยอัตโนมัติ
             </p>
           </div>
         </div>

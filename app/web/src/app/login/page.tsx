@@ -12,16 +12,33 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -left-24 -top-24 size-72 rounded-full bg-blue-200/50 blur-3xl" />
-        <div className="absolute -bottom-32 -right-24 size-96 rounded-full bg-indigo-200/50 blur-3xl" />
-      </div>
+    <main className="grid min-h-screen lg:grid-cols-2">
 
-      <div className="relative z-10 flex w-full justify-center">
-        <LoginForm />
+          <section className="relative hidden overflow-hidden lg:block">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.35),transparent_40%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.25),transparent_45%)]" />
 
-      </div>
-    </main>
+            <div className="relative flex h-full items-end p-16">
+              <div className="max-w-lg">
+                <p className="mb-4 text-sm uppercase tracking-[0.3em] text-slate-500">
+                  Powering the tools that power the team.
+                </p>
+
+                <h2 className="text-4xl font-semibold leading-tight text-slate-800">
+                  สมัครสมาชิกเพื่อจองที่นั่ง
+                </h2>
+
+                <p className="mt-5 text-md leading-8 text-slate-500">
+                  บัญชีแรกที่สมัครในระบบจะได้รับสิทธิ์ Admin + User โดยอัตโนมัติ<br/>
+                  บัญชีที่ 2 ที่สมัครในระบบจะได้รับสิทธิ์ Admin โดยอัตโนมัติ<br/>
+                  หลังจากนั้นจะได้รับสิทธิ์ User โดยอัตโนมัติ
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="flex items-center justify-center px-6 py-12">
+            <LoginForm />
+          </section>
+        </main>
   );
 }

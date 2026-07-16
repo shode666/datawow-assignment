@@ -57,3 +57,5 @@ docker-compose.override.yml
 # temporary files
 tmp/
 temp/
+
+user.txt

@@ -190,11 +190,12 @@ export class AuthService {
         })
         .from(users);
 
-      const isFirstUser = userCount.total === 0;
+      const isSystemAdminUser = userCount.total === 0;
+      const isAdminUser = userCount.total === 1;
 
-      const permissions = isFirstUser
-        ? [Permission.USER, Permission.ADMIN]
-        : [Permission.USER];
+      const permissions = isSystemAdminUser ? [Permission.USER, Permission.ADMIN]:
+                          isAdminUser ? [Permission.ADMIN]:
+                          [Permission.USER];
 
       const [createdUser] = await tx
         .insert(users)
