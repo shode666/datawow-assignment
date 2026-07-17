@@ -125,8 +125,8 @@ export class AuthService {
     await this.denylist.revoke(payload.jti, payload.exp);
   }
 
-  async switch(token: string) {
-    const payload = await this.verifyToken(token, 'access');
+  /** payload มาจาก JwtAuthGuard ที่ verify ให้แล้ว ไม่ต้อง verify ซ้ำ */
+  async switch(payload: VerifiedTokenPayload) {
     const user = await this.findActiveUser(payload.sub);
 
     // พลิก role จาก token ปัจจุบัน ไม่ใช่จาก DB เพราะ DB เก็บ capability ไม่ใช่ role ที่สวมอยู่

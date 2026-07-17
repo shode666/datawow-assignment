@@ -20,9 +20,11 @@ import { type RegisterInput, registerSchema } from './dto/register.zod';
 import { ConfigService } from '@nestjs/config';
 import ms, { StringValue } from 'ms';
 import { Permission } from '@/common/constants/permission.constant';
+import { Public } from '@/common/decorators/public.decorator';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { REFRESH_COOKIE } from '@/common/constants/cookie.constant';
+import type { VerifiedTokenPayload } from './types/token-payload.type';
 
-const REFRESH_COOKIE = 'refresh_token';
-const ACCESS_COOKIE = 'access_token';
 
 @Controller('auth')
 export class AuthController {
@@ -31,6 +33,7 @@ export class AuthController {
     private readonly config: ConfigService,
   ) {}
 
+  @Public()
   @Post('user/login')
   @HttpCode(HttpStatus.OK)
   async loginUser(
@@ -42,6 +45,7 @@ export class AuthController {
     return this.login(input, response, [Permission.USER])
   }
 
+  @Public()
   @Post('admin/login')
   @HttpCode(HttpStatus.OK)
   async loginAdmin(
@@ -75,24 +79,17 @@ export class AuthController {
     };
   }
 
+  // ไม่มี @Public: JwtAuthGuard เป็นคนตรวจ access token และแปะ payload ให้
   @Post('switch')
   @HttpCode(HttpStatus.OK)
   async switch(
-    @Req() request: Request,
+    @CurrentUser() currentUser: VerifiedTokenPayload,
 
     @Res({ passthrough: true })
     response: Response,
   ) {
-    const accessToken = request.cookies?.[ACCESS_COOKIE];
-
-    if (!accessToken) {
-      throw new UnauthorizedException(
-        'Access token is missing',
-      );
-    }
-
     const result =
-      await this.authService.switch(accessToken);
+      await this.authService.switch(currentUser);
 
     // Rotation: refresh token ต้องถือ role ใหม่ด้วย ไม่งั้น refresh ครั้งหน้า role เด้งกลับ
     response.cookie(
@@ -108,6 +105,9 @@ export class AuthController {
     };
   }
 
+  // access token หมดอายุแล้วถึงต้องมาเรียกตัวนี้ ถ้า guard บล็อกจะต่ออายุไม่ได้เลย
+  // ตัวมันเองตรวจ refresh token อยู่แล้วจึงไม่ได้เปิดโล่ง
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
@@ -141,6 +141,8 @@ export class AuthController {
     };
   }
 
+  // ต้อง logout ได้เสมอแม้ access token หมดอายุ ตัวมันเองตรวจ refresh token อยู่แล้ว
+  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
@@ -163,6 +165,7 @@ export class AuthController {
     );
   }
 
+  @Public()
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   register(

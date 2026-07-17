@@ -6,7 +6,8 @@ import { AuthService } from './auth.service';
 import { TokenDenylistService } from './token-denylist.service';
 
 @Module({
-  imports: [JwtModule.register({})],
+  // global: ให้ JwtAuthGuard ที่เป็น global guard ใช้ JwtService ได้
+  imports: [JwtModule.register({ global: true })],
   controllers: [AuthController],
   providers: [AuthService, TokenDenylistService],
 })

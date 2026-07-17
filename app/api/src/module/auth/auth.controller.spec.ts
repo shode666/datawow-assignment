@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { ConfigService } from '@nestjs/config';
 import { Permission } from '@/common/constants/permission.constant';
+import { REFRESH_COOKIE } from '@/common/constants/cookie.constant';
+import type { VerifiedTokenPayload } from './types/token-payload.type';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -88,7 +90,7 @@ describe('AuthController', () => {
       );
 
       expect(responseMock.cookie).toHaveBeenCalledWith(
-        'refresh_token',
+        REFRESH_COOKIE,
         'refresh-token',
         expect.objectContaining({
           httpOnly: true,
@@ -143,7 +145,7 @@ describe('AuthController', () => {
     it('should rotate refresh cookie and return new access token', async () => {
       const requestMock = {
         cookies: {
-          refresh_token: 'old-refresh-token',
+          [REFRESH_COOKIE]: 'old-refresh-token',
         },
       } as unknown as Request;
 
@@ -163,7 +165,7 @@ describe('AuthController', () => {
       );
 
       expect(responseMock.cookie).toHaveBeenCalledWith(
-        'refresh_token',
+        REFRESH_COOKIE,
         'new-refresh-token',
         expect.objectContaining({
           httpOnly: true,
@@ -191,11 +193,16 @@ describe('AuthController', () => {
   });
 
   describe('switch', () => {
-    const requestMock = {
-      cookies: {
-        access_token: 'access-token',
-      },
-    } as unknown as Request;
+    // JwtAuthGuard verify แล้วแปะ payload นี้มาให้ ไม่ต้องอ่าน cookie เอง
+    const currentUser: VerifiedTokenPayload = {
+      sub: 'user-id',
+      email: 'admin@example.com',
+      permissions: [Permission.USER],
+      type: 'access',
+      jti: 'jti-1',
+      iat: 0,
+      exp: 0,
+    };
 
     beforeEach(() => {
       authServiceMock.switch.mockResolvedValue({
@@ -211,24 +218,24 @@ describe('AuthController', () => {
       });
     });
 
-    it('should call switch with the access token, not refresh', async () => {
+    it('should switch using the payload from the guard, not refresh', async () => {
       // เคยพัง: endpoint นี้ก๊อปมาจาก refresh เลยไปเรียก refresh()
-      await controller.switch(requestMock, responseMock);
+      await controller.switch(currentUser, responseMock);
 
       expect(authServiceMock.switch).toHaveBeenCalledWith(
-        'access-token',
+        currentUser,
       );
       expect(authServiceMock.refresh).not.toHaveBeenCalled();
     });
 
     it('should rotate the refresh cookie so the new role survives a refresh', async () => {
       const result = await controller.switch(
-        requestMock,
+        currentUser,
         responseMock,
       );
 
       expect(responseMock.cookie).toHaveBeenCalledWith(
-        'refresh_token',
+        REFRESH_COOKIE,
         'switched-refresh-token',
         expect.objectContaining({
           httpOnly: true,
@@ -247,24 +254,13 @@ describe('AuthController', () => {
         },
       });
     });
-
-    it('should throw when the access cookie is missing', async () => {
-      await expect(
-        controller.switch(
-          { cookies: {} } as unknown as Request,
-          responseMock,
-        ),
-      ).rejects.toThrow(UnauthorizedException);
-
-      expect(authServiceMock.switch).not.toHaveBeenCalled();
-    });
   });
 
   describe('logout', () => {
     it('should revoke the refresh token and clear the cookie', async () => {
       const requestMock = {
         cookies: {
-          refresh_token: 'refresh-token',
+          [REFRESH_COOKIE]: 'refresh-token',
         },
       } as unknown as Request;
 
@@ -276,7 +272,7 @@ describe('AuthController', () => {
       );
 
       expect(responseMock.clearCookie).toHaveBeenCalledWith(
-        'refresh_token',
+        REFRESH_COOKIE,
         expect.objectContaining({
           httpOnly: true,
           path: '/api/auth',

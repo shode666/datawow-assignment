@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { DATABASE } from '@/infra/database/database.constants';
 import { Permission } from '@/common/constants/permission.constant';
 import { TokenDenylistService } from './token-denylist.service';
+import type { VerifiedTokenPayload } from './types/token-payload.type';
 
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
@@ -421,16 +422,22 @@ describe('AuthService', () => {
   });
 
   describe('switch', () => {
-    function mockSwitch(permissions: number[]) {
-      jwtServiceMock.verifyAsync.mockResolvedValue({
+    // การ verify token เป็นหน้าที่ของ JwtAuthGuard แล้ว ที่นี่รับ payload มาตรงๆ
+    function payloadWith(
+      permissions: number[],
+    ): VerifiedTokenPayload {
+      return {
         sub: user.id,
         email: user.email,
         permissions,
         type: 'access',
         jti: 'jti-1',
+        iat: 0,
         exp: FUTURE_EXP,
-      });
+      };
+    }
 
+    function mockIssue() {
       mockDatabaseResult([user]);
 
       jwtServiceMock.signAsync
@@ -439,9 +446,11 @@ describe('AuthService', () => {
     }
 
     it('should switch user to admin', async () => {
-      mockSwitch([Permission.USER]);
+      mockIssue();
 
-      const result = await service.switch('access-token');
+      const result = await service.switch(
+        payloadWith([Permission.USER]),
+      );
 
       expect(result.user.permissions).toEqual([
         Permission.ADMIN,
@@ -458,9 +467,11 @@ describe('AuthService', () => {
 
     it('should switch admin back to user', async () => {
       // เคสที่เคยพัง: อ่าน role จาก DB ทำให้กลับมาเป็น user ไม่ได้
-      mockSwitch([Permission.ADMIN]);
+      mockIssue();
 
-      const result = await service.switch('access-token');
+      const result = await service.switch(
+        payloadWith([Permission.ADMIN]),
+      );
 
       expect(result.user.permissions).toEqual([
         Permission.USER,
@@ -468,9 +479,11 @@ describe('AuthService', () => {
     });
 
     it('should return tokens and user like login does', async () => {
-      mockSwitch([Permission.USER]);
+      mockIssue();
 
-      const result = await service.switch('access-token');
+      const result = await service.switch(
+        payloadWith([Permission.USER]),
+      );
 
       expect(result).toEqual({
         accessToken: 'new-access-token',
@@ -485,45 +498,11 @@ describe('AuthService', () => {
       });
     });
 
-    it('should reject a refresh token used as access token', async () => {
-      jwtServiceMock.verifyAsync.mockResolvedValue({
-        sub: user.id,
-        email: user.email,
-        permissions: [Permission.USER],
-        type: 'refresh',
-        jti: 'jti-1',
-        exp: FUTURE_EXP,
-      });
-
-      await expect(
-        service.switch('refresh-token'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw when the token is invalid', async () => {
-      jwtServiceMock.verifyAsync.mockRejectedValue(
-        new Error('invalid token'),
-      );
-
-      await expect(
-        service.switch('invalid-token'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
     it('should throw when the user no longer exists', async () => {
-      jwtServiceMock.verifyAsync.mockResolvedValue({
-        sub: user.id,
-        email: user.email,
-        permissions: [Permission.USER],
-        type: 'access',
-        jti: 'jti-1',
-        exp: FUTURE_EXP,
-      });
-
       mockDatabaseResult([]);
 
       await expect(
-        service.switch('access-token'),
+        service.switch(payloadWith([Permission.USER])),
       ).rejects.toThrow(UnauthorizedException);
     });
   });
