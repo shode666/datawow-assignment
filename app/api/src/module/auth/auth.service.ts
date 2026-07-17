@@ -29,7 +29,7 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async login(input: LoginInput) {
+  async login(input: LoginInput, permissions: number[]) {
     const [user] = await this.db
       .select()
       .from(users)
@@ -56,7 +56,7 @@ export class AuthService {
     const tokens = await this.issueTokens({
       sub: user.id,
       email: user.email,
-      permissions: user.permissions,
+      permissions,
     });
 
     return {
@@ -65,7 +65,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         fullName: user.fullName,
-        permissions: user.permissions,
+        permissions,
       },
     };
   }
@@ -105,11 +105,71 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // คง role ที่ switch ไว้ ไม่อ่านจาก DB ไม่งั้น role เด้งกลับทุกครั้งที่ refresh
     return this.issueTokens({
       sub: user.id,
       email: user.email,
-      permissions: user.permissions,
+      permissions: payload.permissions,
     });
+  }
+
+  async switch(token: string) {
+    let payload: TokenPayload;
+
+    try {
+      payload =
+        await this.jwtService.verifyAsync<TokenPayload>(
+          token,
+          {
+            secret: this.config.getOrThrow<string>(
+              'JWT_ACCESS_SECRET',
+            ),
+          },
+        );
+    } catch {
+      throw new UnauthorizedException(
+        'Invalid token',
+      );
+    }
+
+    if (payload.type !== 'access') {
+      throw new UnauthorizedException(
+        'Invalid type',
+      );
+    }
+
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.id, payload.sub))
+      .limit(1);
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // พลิก role จาก token ปัจจุบัน ไม่ใช่จาก DB เพราะ DB เก็บ capability ไม่ใช่ role ที่สวมอยู่
+    const newPermissions = payload.permissions.includes(
+      Permission.ADMIN,
+    )
+      ? [Permission.USER]
+      : [Permission.ADMIN];
+
+    const tokens = await this.issueTokens({
+      sub: user.id,
+      email: user.email,
+      permissions: newPermissions,
+    });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        permissions: newPermissions,
+      },
+    };
   }
 
   private async issueTokens(
@@ -184,18 +244,7 @@ export class AuthService {
         );
       }
 
-      const [userCount] = await tx
-        .select({
-          total: count(),
-        })
-        .from(users);
-
-      const isSystemAdminUser = userCount.total === 0;
-      const isAdminUser = userCount.total === 1;
-
-      const permissions = isSystemAdminUser ? [Permission.USER, Permission.ADMIN]:
-                          isAdminUser ? [Permission.ADMIN]:
-                          [Permission.USER];
+      const permissions = [Permission.USER];
 
       const [createdUser] = await tx
         .insert(users)

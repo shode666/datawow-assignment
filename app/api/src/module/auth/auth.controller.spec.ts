@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { ConfigService } from '@nestjs/config';
+import { Permission } from '@/common/constants/permission.constant';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -12,6 +13,7 @@ describe('AuthController', () => {
   const authServiceMock = {
     login: jest.fn(),
     refresh: jest.fn(),
+    switch: jest.fn(),
   };
   const configServiceMock = {
     getOrThrow: jest.fn((key: string) => {
@@ -57,7 +59,12 @@ describe('AuthController', () => {
   });
 
   describe('login', () => {
-    it('should set refresh cookie and return access token', async () => {
+    const credentials = {
+      email: 'admin@example.com',
+      password: 'Password123!',
+    };
+
+    function mockLogin(permissions: number[]) {
       authServiceMock.login.mockResolvedValue({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
@@ -66,29 +73,25 @@ describe('AuthController', () => {
           id: 'user-id',
           email: 'admin@example.com',
           fullName: 'Admin User',
-          permissions: [1, 2],
+          permissions,
         },
       });
+    }
 
-      const result = await controller.login(
-        {
-          email: 'admin@example.com',
-          password: 'Password123!',
-        },
+    it('should set refresh cookie and return access token', async () => {
+      mockLogin([Permission.USER]);
+
+      const result = await controller.loginUser(
+        credentials,
         responseMock,
       );
-
-      expect(authServiceMock.login).toHaveBeenCalledWith({
-        email: 'admin@example.com',
-        password: 'Password123!',
-      });
 
       expect(responseMock.cookie).toHaveBeenCalledWith(
         'refresh_token',
         'refresh-token',
         expect.objectContaining({
           httpOnly: true,
-          path: '/auth',
+          path: '/api/auth',
         }),
       );
 
@@ -99,9 +102,39 @@ describe('AuthController', () => {
           id: 'user-id',
           email: 'admin@example.com',
           fullName: 'Admin User',
-          permissions: [1, 2],
+          permissions: [Permission.USER],
         },
       });
+    });
+
+    it('should ask the service to sign a user role on user login', async () => {
+      mockLogin([Permission.USER]);
+
+      await controller.loginUser(credentials, responseMock);
+
+      expect(authServiceMock.login).toHaveBeenCalledWith(
+        credentials,
+        [Permission.USER],
+      );
+    });
+
+    it('should ask the service to sign an admin role on admin login', async () => {
+      // เคสที่เคยพัง: role ถูกทับแค่ใน response body ส่วน token ยังเป็น user
+      mockLogin([Permission.ADMIN]);
+
+      const result = await controller.loginAdmin(
+        credentials,
+        responseMock,
+      );
+
+      expect(authServiceMock.login).toHaveBeenCalledWith(
+        credentials,
+        [Permission.ADMIN],
+      );
+
+      expect(result.user.permissions).toEqual([
+        Permission.ADMIN,
+      ]);
     });
   });
 
@@ -133,7 +166,7 @@ describe('AuthController', () => {
         'new-refresh-token',
         expect.objectContaining({
           httpOnly: true,
-          path: '/auth',
+          path: '/api/auth',
         }),
       );
 
@@ -156,6 +189,76 @@ describe('AuthController', () => {
     });
   });
 
+  describe('switch', () => {
+    const requestMock = {
+      cookies: {
+        access_token: 'access-token',
+      },
+    } as unknown as Request;
+
+    beforeEach(() => {
+      authServiceMock.switch.mockResolvedValue({
+        accessToken: 'switched-access-token',
+        refreshToken: 'switched-refresh-token',
+        tokenType: 'Bearer',
+        user: {
+          id: 'user-id',
+          email: 'admin@example.com',
+          fullName: 'Admin User',
+          permissions: [Permission.ADMIN],
+        },
+      });
+    });
+
+    it('should call switch with the access token, not refresh', async () => {
+      // เคยพัง: endpoint นี้ก๊อปมาจาก refresh เลยไปเรียก refresh()
+      await controller.switch(requestMock, responseMock);
+
+      expect(authServiceMock.switch).toHaveBeenCalledWith(
+        'access-token',
+      );
+      expect(authServiceMock.refresh).not.toHaveBeenCalled();
+    });
+
+    it('should rotate the refresh cookie so the new role survives a refresh', async () => {
+      const result = await controller.switch(
+        requestMock,
+        responseMock,
+      );
+
+      expect(responseMock.cookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'switched-refresh-token',
+        expect.objectContaining({
+          httpOnly: true,
+          path: '/api/auth',
+        }),
+      );
+
+      expect(result).toEqual({
+        accessToken: 'switched-access-token',
+        tokenType: 'Bearer',
+        user: {
+          id: 'user-id',
+          email: 'admin@example.com',
+          fullName: 'Admin User',
+          permissions: [Permission.ADMIN],
+        },
+      });
+    });
+
+    it('should throw when the access cookie is missing', async () => {
+      await expect(
+        controller.switch(
+          { cookies: {} } as unknown as Request,
+          responseMock,
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(authServiceMock.switch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('logout', () => {
     it('should clear refresh cookie', () => {
       controller.logout(responseMock);
@@ -164,7 +267,7 @@ describe('AuthController', () => {
         'refresh_token',
         expect.objectContaining({
           httpOnly: true,
-          path: '/auth',
+          path: '/api/auth',
         }),
       );
     });
