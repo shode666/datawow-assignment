@@ -143,10 +143,20 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  logout(
+  async logout(
+    @Req() request: Request,
+
     @Res({ passthrough: true })
     response: Response,
   ) {
+    const refreshToken =
+      request.cookies?.[REFRESH_COOKIE];
+
+    // ลบ cookie อย่างเดียวไม่พอ JWT ที่หลุดไปแล้วยัง valid จนหมดอายุ
+    if (refreshToken) {
+      await this.authService.logout(refreshToken);
+    }
+
     response.clearCookie(
       REFRESH_COOKIE,
       this.refreshCookieOptions(),

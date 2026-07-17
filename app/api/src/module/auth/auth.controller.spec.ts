@@ -14,6 +14,7 @@ describe('AuthController', () => {
     login: jest.fn(),
     refresh: jest.fn(),
     switch: jest.fn(),
+    logout: jest.fn(),
   };
   const configServiceMock = {
     getOrThrow: jest.fn((key: string) => {
@@ -260,8 +261,19 @@ describe('AuthController', () => {
   });
 
   describe('logout', () => {
-    it('should clear refresh cookie', () => {
-      controller.logout(responseMock);
+    it('should revoke the refresh token and clear the cookie', async () => {
+      const requestMock = {
+        cookies: {
+          refresh_token: 'refresh-token',
+        },
+      } as unknown as Request;
+
+      await controller.logout(requestMock, responseMock);
+
+      // ลบ cookie อย่างเดียวไม่พอ token ต้องถูก revoke ด้วย
+      expect(authServiceMock.logout).toHaveBeenCalledWith(
+        'refresh-token',
+      );
 
       expect(responseMock.clearCookie).toHaveBeenCalledWith(
         'refresh_token',
@@ -270,6 +282,17 @@ describe('AuthController', () => {
           path: '/api/auth',
         }),
       );
+    });
+
+    it('should still clear the cookie when there is no refresh token', async () => {
+      const requestMock = {
+        cookies: {},
+      } as unknown as Request;
+
+      await controller.logout(requestMock, responseMock);
+
+      expect(authServiceMock.logout).not.toHaveBeenCalled();
+      expect(responseMock.clearCookie).toHaveBeenCalled();
     });
   });
 });

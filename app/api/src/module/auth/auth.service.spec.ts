@@ -7,11 +7,16 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { DATABASE } from '@/infra/database/database.constants';
 import { Permission } from '@/common/constants/permission.constant';
+import { TokenDenylistService } from './token-denylist.service';
 
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
   hash: jest.fn(),
 }));
+
+/** exp ของ token ที่ยังไม่หมดอายุ ใช้คำนวณ TTL ของ denylist */
+const FUTURE_EXP =
+  Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -26,6 +31,11 @@ describe('AuthService', () => {
   const jwtServiceMock = {
     signAsync: jest.fn(),
     verifyAsync: jest.fn(),
+  };
+
+  const denylistMock = {
+    revoke: jest.fn(),
+    isRevoked: jest.fn(),
   };
 
   const configServiceMock = {
@@ -61,6 +71,10 @@ describe('AuthService', () => {
     jwtServiceMock.signAsync.mockReset();
     jwtServiceMock.verifyAsync.mockReset();
 
+    denylistMock.revoke.mockReset();
+    denylistMock.isRevoked.mockReset();
+    denylistMock.isRevoked.mockResolvedValue(false);
+
     jest.mocked(bcrypt.compare).mockReset();
     jest.mocked(bcrypt.hash).mockReset();
 
@@ -83,6 +97,10 @@ describe('AuthService', () => {
         {
           provide: ConfigService,
           useValue: configServiceMock,
+        },
+        {
+          provide: TokenDenylistService,
+          useValue: denylistMock,
         },
       ],
     }).compile();
@@ -189,6 +207,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions: user.permissions,
         type: 'refresh',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       mockDatabaseResult([user]);
@@ -220,6 +240,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions: [Permission.USER],
         type: 'refresh',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       mockDatabaseResult([user]);
@@ -255,6 +277,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions: user.permissions,
         type: 'access',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       await expect(
@@ -268,6 +292,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions: user.permissions,
         type: 'refresh',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       mockDatabaseResult([]);
@@ -278,6 +304,122 @@ describe('AuthService', () => {
     });
   });
 
+  describe('refresh token revocation', () => {
+    function mockRefresh() {
+      jwtServiceMock.verifyAsync.mockResolvedValue({
+        sub: user.id,
+        email: user.email,
+        permissions: user.permissions,
+        type: 'refresh',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
+      });
+
+      mockDatabaseResult([user]);
+
+      jwtServiceMock.signAsync
+        .mockResolvedValueOnce('new-access-token')
+        .mockResolvedValueOnce('new-refresh-token');
+    }
+
+    it('should burn the refresh token after use', async () => {
+      mockRefresh();
+
+      await service.refresh('old-refresh-token');
+
+      expect(denylistMock.revoke).toHaveBeenCalledWith(
+        'jti-1',
+        FUTURE_EXP,
+      );
+    });
+
+    it('should reject a refresh token that was already used', async () => {
+      mockRefresh();
+      denylistMock.isRevoked.mockResolvedValue(true);
+
+      await expect(
+        service.refresh('replayed-token'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('should reject a legacy token issued before jti existed', async () => {
+      jwtServiceMock.verifyAsync.mockResolvedValue({
+        sub: user.id,
+        email: user.email,
+        permissions: user.permissions,
+        type: 'refresh',
+        exp: FUTURE_EXP,
+      });
+
+      await expect(
+        service.refresh('legacy-token'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(denylistMock.revoke).not.toHaveBeenCalled();
+    });
+
+    it('should not issue tokens when the user is gone even if the token is valid', async () => {
+      mockRefresh();
+      mockDatabaseResult([]);
+
+      await expect(
+        service.refresh('refresh-token'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(denylistMock.revoke).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logout', () => {
+    it('should revoke the refresh token', async () => {
+      jwtServiceMock.verifyAsync.mockResolvedValue({
+        sub: user.id,
+        email: user.email,
+        permissions: user.permissions,
+        type: 'refresh',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
+      });
+
+      await service.logout('refresh-token');
+
+      expect(denylistMock.revoke).toHaveBeenCalledWith(
+        'jti-1',
+        FUTURE_EXP,
+      );
+    });
+
+    it('should stay quiet when the token is already invalid', async () => {
+      jwtServiceMock.verifyAsync.mockRejectedValue(
+        new Error('invalid token'),
+      );
+
+      // logout ต้องไม่ throw ไม่งั้นผู้ใช้ที่ token หมดอายุจะ logout ไม่ได้
+      await expect(
+        service.logout('expired-token'),
+      ).resolves.toBeUndefined();
+
+      expect(denylistMock.revoke).not.toHaveBeenCalled();
+    });
+
+    it('should ignore an access token passed as refresh', async () => {
+      jwtServiceMock.verifyAsync.mockResolvedValue({
+        sub: user.id,
+        email: user.email,
+        permissions: user.permissions,
+        type: 'access',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
+      });
+
+      await service.logout('access-token');
+
+      expect(denylistMock.revoke).not.toHaveBeenCalled();
+    });
+  });
+
   describe('switch', () => {
     function mockSwitch(permissions: number[]) {
       jwtServiceMock.verifyAsync.mockResolvedValue({
@@ -285,6 +427,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions,
         type: 'access',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       mockDatabaseResult([user]);
@@ -347,6 +491,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions: [Permission.USER],
         type: 'refresh',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       await expect(
@@ -370,6 +516,8 @@ describe('AuthService', () => {
         email: user.email,
         permissions: [Permission.USER],
         type: 'access',
+        jti: 'jti-1',
+        exp: FUTURE_EXP,
       });
 
       mockDatabaseResult([]);
