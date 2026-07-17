@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { callApi } from '@/lib/api';
 import {
   type SessionUser,
   readRefreshToken,
@@ -14,15 +15,11 @@ function isRole(value: string): value is Role {
   return ROLES.includes(value as Role);
 }
 
-interface LoginResponse {
+type LoginResponse = {
   accessToken: string;
   tokenType: 'Bearer';
   user: SessionUser;
-}
-
-interface ApiError {
-  message?: string | string[];
-}
+};
 
 export async function POST(
   request: Request,
@@ -37,48 +34,24 @@ export async function POST(
     );
   }
 
-  const apiUrl = process.env.API_INTERNAL_URL;
-
-  if (!apiUrl) {
-    return NextResponse.json(
-      { message: 'API_INTERNAL_URL is not configured' },
-      { status: 500 },
-    );
-  }
-
-  const body: unknown = await request.json();
-
-  const apiResponse = await fetch(
-    `${apiUrl}/auth/${role}/login`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      cache: 'no-store',
-    },
+  const result = await callApi<LoginResponse>(
+    `/auth/${role}/login`,
+    { body: await request.json() },
   );
 
-  const responseBody = (await apiResponse.json()) as
-    | LoginResponse
-    | ApiError;
-
-  if (!apiResponse.ok) {
-    return NextResponse.json(responseBody, {
-      status: apiResponse.status,
+  if (!result.ok) {
+    return NextResponse.json(result.body, {
+      status: result.status,
     });
   }
 
-  const result = responseBody as LoginResponse;
+  const login = result.body as LoginResponse;
 
   await writeSession({
-    accessToken: result.accessToken,
-    refreshToken: readRefreshToken(apiResponse),
-    user: result.user,
+    accessToken: login.accessToken,
+    refreshToken: readRefreshToken(result.response),
+    user: login.user,
   });
 
-  return NextResponse.json({
-    user: result.user,
-  });
+  return NextResponse.json({ user: login.user });
 }

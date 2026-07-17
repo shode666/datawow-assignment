@@ -1,21 +1,13 @@
 import Link from 'next/link';
 
-const BRAND = '#2E6DA4';
-
 export default function RoleSelectPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white px-6 py-6 sm:px-10">
         <div className="flex items-center gap-3">
-          <span
-            className="size-3.5 rounded-full"
-            style={{ backgroundColor: BRAND }}
-          />
+          <span className="size-3.5 rounded-full bg-brand" />
 
-          <span
-            className="text-sm font-bold tracking-[0.2em]"
-            style={{ color: BRAND }}
-          >
+          <span className="text-sm font-bold tracking-[0.2em] text-brand">
             BRAND
           </span>
         </div>
@@ -63,6 +55,19 @@ type RoleCardProps = {
   action: string;
 };
 
+const toneStyles = {
+  light: {
+    card: 'border border-slate-200 bg-white text-brand',
+    description: 'text-brand/85',
+    action: 'bg-brand text-white',
+  },
+  dark: {
+    card: 'bg-brand text-white',
+    description: 'text-white/85',
+    action: 'bg-white text-brand',
+  },
+} as const;
+
 function RoleCard({
   tone,
   title,
@@ -70,37 +75,23 @@ function RoleCard({
   href,
   action,
 }: RoleCardProps) {
-  const isDark = tone === 'dark';
+  const styles = toneStyles[tone];
 
   return (
     <section
-      className={`flex min-h-104 flex-col p-10 ${
-        isDark ? 'text-white' : 'border border-slate-200 bg-white'
-      }`}
-      style={
-        isDark
-          ? { backgroundColor: BRAND }
-          : { color: BRAND }
-      }
+      className={`flex min-h-104 flex-col p-10 ${styles.card}`}
     >
       <h2 className="mt-4 text-2xl font-bold">{title}</h2>
 
       <p
-        className={`mt-6 text-sm leading-6 ${
-          isDark ? 'text-white/85' : 'opacity-85'
-        }`}
+        className={`mt-6 text-sm leading-6 ${styles.description}`}
       >
         {description}
       </p>
 
       <Link
         href={href}
-        className="mt-auto flex h-12 items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90"
-        style={
-          isDark
-            ? { backgroundColor: '#ffffff', color: BRAND }
-            : { backgroundColor: BRAND, color: '#ffffff' }
-        }
+        className={`mt-auto flex h-12 items-center justify-center gap-2 text-sm font-semibold transition-opacity hover:opacity-90 ${styles.action}`}
       >
         {action}
         <span aria-hidden="true">→</span>

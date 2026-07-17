@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
+import { callApi } from '@/lib/api';
 import {
   ACCESS_COOKIE,
   type SessionUser,
@@ -8,26 +9,13 @@ import {
   writeSession,
 } from '@/lib/session';
 
-interface SwitchResponse {
+type SwitchResponse = {
   accessToken: string;
   tokenType: 'Bearer';
   user: SessionUser;
-}
-
-interface ApiError {
-  message?: string | string[];
-}
+};
 
 export async function POST() {
-  const apiUrl = process.env.API_INTERNAL_URL;
-
-  if (!apiUrl) {
-    return NextResponse.json(
-      { message: 'API_INTERNAL_URL is not configured' },
-      { status: 500 },
-    );
-  }
-
   const cookieStore = await cookies();
   const accessToken =
     cookieStore.get(ACCESS_COOKIE)?.value;
@@ -39,34 +27,24 @@ export async function POST() {
     );
   }
 
-  // fetch ฝั่ง server ไม่ส่ง cookie ของ browser ต่อให้ ต้องแนบเอง
-  const apiResponse = await fetch(`${apiUrl}/auth/switch`, {
-    method: 'POST',
-    headers: {
-      Cookie: `${ACCESS_COOKIE}=${accessToken}`,
-    },
-    cache: 'no-store',
-  });
+  const result = await callApi<SwitchResponse>(
+    '/auth/switch',
+    { cookie: `${ACCESS_COOKIE}=${accessToken}` },
+  );
 
-  const responseBody = (await apiResponse.json()) as
-    | SwitchResponse
-    | ApiError;
-
-  if (!apiResponse.ok) {
-    return NextResponse.json(responseBody, {
-      status: apiResponse.status,
+  if (!result.ok) {
+    return NextResponse.json(result.body, {
+      status: result.status,
     });
   }
 
-  const result = responseBody as SwitchResponse;
+  const switched = result.body as SwitchResponse;
 
   await writeSession({
-    accessToken: result.accessToken,
-    refreshToken: readRefreshToken(apiResponse),
-    user: result.user,
+    accessToken: switched.accessToken,
+    refreshToken: readRefreshToken(result.response),
+    user: switched.user,
   });
 
-  return NextResponse.json({
-    user: result.user,
-  });
+  return NextResponse.json({ user: switched.user });
 }

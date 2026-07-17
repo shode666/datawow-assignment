@@ -20,6 +20,7 @@ import type { LoginInput } from './dto/login.zod';
 import type { RegisterInput } from './dto/register.zod';
 import type {
   TokenPayload,
+  TokenType,
   VerifiedTokenPayload,
 } from './types/token-payload.type';
 import { Permission } from '@/common/constants/permission.constant';
@@ -80,37 +81,10 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
-    let payload: VerifiedTokenPayload;
-
-    try {
-      payload =
-        await this.jwtService.verifyAsync<VerifiedTokenPayload>(
-          refreshToken,
-          {
-            secret: this.config.getOrThrow<string>(
-              'JWT_REFRESH_SECRET',
-            ),
-          },
-        );
-    } catch {
-      throw new UnauthorizedException(
-        'Invalid refresh token',
-      );
-    }
-
-    if (payload.type !== 'refresh') {
-      throw new UnauthorizedException(
-        'Invalid token type',
-      );
-    }
-
-    // token ที่ออกก่อนมี jti จะ revoke ไม่ได้ ต้องบังคับ login ใหม่
-    // ปล่อยผ่านไม่ได้ เพราะ jti undefined จะทำให้ทุก session ชนกันที่ key เดียว
-    if (!payload.jti) {
-      throw new UnauthorizedException(
-        'Invalid refresh token',
-      );
-    }
+    const payload = await this.verifyToken(
+      refreshToken,
+      'refresh',
+    );
 
     // refresh token ใช้ได้ครั้งเดียว ถ้าถูกใช้ไปแล้วแปลว่ามีคนเอาของเก่ามาเล่นซ้ำ
     if (await this.denylist.isRevoked(payload.jti)) {
@@ -123,15 +97,7 @@ export class AuthService {
       );
     }
 
-    const [user] = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.id, payload.sub))
-      .limit(1);
-
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
+    const user = await this.findActiveUser(payload.sub);
 
     await this.denylist.revoke(payload.jti, payload.exp);
 
@@ -147,21 +113,12 @@ export class AuthService {
     let payload: VerifiedTokenPayload;
 
     try {
-      payload =
-        await this.jwtService.verifyAsync<VerifiedTokenPayload>(
-          refreshToken,
-          {
-            secret: this.config.getOrThrow<string>(
-              'JWT_REFRESH_SECRET',
-            ),
-          },
-        );
+      payload = await this.verifyToken(
+        refreshToken,
+        'refresh',
+      );
     } catch {
       // token เสียหรือหมดอายุอยู่แล้ว ไม่มีอะไรให้ revoke ปล่อย logout ผ่านไป
-      return;
-    }
-
-    if (payload.type !== 'refresh' || !payload.jti) {
       return;
     }
 
@@ -169,39 +126,8 @@ export class AuthService {
   }
 
   async switch(token: string) {
-    let payload: TokenPayload;
-
-    try {
-      payload =
-        await this.jwtService.verifyAsync<TokenPayload>(
-          token,
-          {
-            secret: this.config.getOrThrow<string>(
-              'JWT_ACCESS_SECRET',
-            ),
-          },
-        );
-    } catch {
-      throw new UnauthorizedException(
-        'Invalid token',
-      );
-    }
-
-    if (payload.type !== 'access') {
-      throw new UnauthorizedException(
-        'Invalid type',
-      );
-    }
-
-    const [user] = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.id, payload.sub))
-      .limit(1);
-
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
+    const payload = await this.verifyToken(token, 'access');
+    const user = await this.findActiveUser(payload.sub);
 
     // พลิก role จาก token ปัจจุบัน ไม่ใช่จาก DB เพราะ DB เก็บ capability ไม่ใช่ role ที่สวมอยู่
     const newPermissions = payload.permissions.includes(
@@ -225,6 +151,61 @@ export class AuthService {
         permissions: newPermissions,
       },
     };
+  }
+
+  /**
+   * verify + เช็คว่าเป็น token ชนิดที่ต้องการจริง
+   * access กับ refresh คนละ secret จึงสลับกันใช้ไม่ได้อยู่แล้ว
+   * แต่เช็ค type ซ้ำกันเหนียวไว้เผื่อ secret ถูกตั้งซ้ำกันโดยไม่ตั้งใจ
+   */
+  private async verifyToken(
+    token: string,
+    type: TokenType,
+  ): Promise<VerifiedTokenPayload> {
+    const secret =
+      type === 'access'
+        ? 'JWT_ACCESS_SECRET'
+        : 'JWT_REFRESH_SECRET';
+
+    let payload: VerifiedTokenPayload;
+
+    try {
+      payload =
+        await this.jwtService.verifyAsync<VerifiedTokenPayload>(
+          token,
+          {
+            secret: this.config.getOrThrow<string>(secret),
+          },
+        );
+    } catch {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    if (payload.type !== type) {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
+    // token ที่ออกก่อนมี jti จะ revoke ไม่ได้ ต้องบังคับ login ใหม่
+    // ปล่อยผ่านไม่ได้ เพราะ jti undefined จะทำให้ทุก session ชนกันที่ key เดียว
+    if (!payload.jti) {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    return payload;
+  }
+
+  private async findActiveUser(id: string) {
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return user;
   }
 
   private async issueTokens(
