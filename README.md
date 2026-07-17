@@ -45,13 +45,27 @@ Monorepo แบ่งเป็น 2 แอปที่ deploy แยกกัน
 ## Architecture
 
 ```
-browser ──> Next.js (app/web) ──> NestJS (app/api) ──> PostgreSQL
-              BFF route handler                    └─> Redis (token denylist)
+Browser ──[Cookie: session]──> Next.js (app/web) ──[Cookie: access_token]──> NestJS (app/api)
+                                 BFF route handler <──[JSON body: 2 tokens]──┘  │
+                                                                                ├─> PostgreSQL
+                                                                                └─> Redis (token denylist)
 ```
 
 Browser **ไม่เคยคุยกับ NestJS โดยตรง** ทุก request ผ่าน route handler ของ Next.js ซึ่งถือ token ไว้ใน httpOnly cookie ฝั่งตัวเอง แล้วแนบส่งต่อไป NestJS เอง
 
 token ไม่โผล่ใน JavaScript ฝั่ง client และไม่มี CORS ระหว่าง browser กับ API
+
+### แต่ละขาใช้อะไร
+
+| ขา | ใช้อะไร | ใครกำหนด |
+|---|---|---|
+| Browser ↔ Next.js | cookie `session` ก้อนเดียว | Next.js |
+| Next.js → NestJS | `Cookie: access_token=` / `refresh_token=` | Next.js ประกอบ header เอง |
+| NestJS → Next.js | JSON body | NestJS |
+
+**NestJS ไม่เคยตั้ง cookie** — มันไม่ได้คุยกับ browser จึงไม่รู้ว่าต่อผ่าน HTTPS ไหม (`secure`) หรือ domain วางยังไง (`sameSite`) คนที่รู้คือ Next.js ซึ่งเป็นคนคุม cookie ทั้งหมด
+
+NestJS **อ่าน** cookie (ผ่าน `cookieParser`) แต่ไม่ **สร้าง** cookie — ขาเข้ารับ token ทาง `Cookie` header ขาออกคืน token ทาง body
 
 ---
 
@@ -77,15 +91,43 @@ token ไม่โผล่ใน JavaScript ฝั่ง client และไม
 
 **Switch เป็น toggle** — อ่าน role ปัจจุบันจาก access token แล้วพลิก จากนั้นออก token ใหม่ทั้งคู่ (refresh ต้อง rotate ด้วย ไม่งั้น role เด้งกลับตอน refresh ครั้งถัดไป)
 
-**Session ผูกกับ refresh token ไม่ใช่ access token** — layout ฝั่ง protected เช็คว่ามี `refresh_token` ไหม เพราะ access token หมดอายุทุก 15 นาทีเป็นเรื่องปกติ ไม่ได้แปลว่า logout
+**มี session = ยัง login อยู่** — layout ฝั่ง protected เช็คแค่ว่ามี session ไหม ไม่สนว่า access token หมดอายุหรือยัง เพราะมันหมดทุก 15 นาทีเป็นเรื่องปกติ ไม่ได้แปลว่า logout — พอเจอ 401 ถึงค่อยต่ออายุให้เอง
 
-### Cookie ที่ Next.js ถือไว้
+### Cookie ที่ browser เก็บ
 
-| Cookie | อายุ | ใช้ทำอะไร |
+**ก้อนเดียว** ชื่อ `session` (7 วัน, httpOnly, ~1.2KB) เป็น base64url ของ:
+
+```json
+{ "accessToken": "eyJ...", "refreshToken": "eyJ...", "user": { ... } }
+```
+
+เดิมแยกเป็น 3 cookie (`access_token` 15 นาที / `refresh_token` 7 วัน / `auth_user` 7 วัน) แล้วเจอ 2 ปัญหา:
+
+- **หมดอายุคนละเวลา** → มีจังหวะที่ session ครึ่งๆ กลางๆ (access หายแต่ refresh ยังอยู่) ต้องคอยเขียน logic รองรับ
+- **parse กระจาย 4 ที่** → drift จนพัง (3 ใน 4 ที่เรียก `decodeURIComponent` ซ้ำทั้งที่ `cookies().get()` decode ให้แล้ว)
+
+รวมเป็นก้อนเดียวแล้วหมดอายุพร้อมกัน และ parse ที่เดียวใน [`lib/session.ts`](app/web/src/lib/session.ts)
+
+> ใช้ base64url เพราะ JSON ดิบมีอักขระที่ cookie ต้อง percent-encode (`{` `"` `,` และภาษาไทยใน `fullName`)
+
+### Guard — ป้องกันทุก endpoint ตั้งแต่แรก
+
+`JwtAuthGuard` และ `PermissionGuard` ตั้งเป็น **global guard** (`APP_GUARD`) แล้วใช้ `@Public()` ยกเว้นเป็นรายตัว — **ลืมใส่ = ถูกป้องกัน** ปลอดภัยกว่าลืมใส่แล้วเปิดโล่ง
+
+| | ตอบคำถามว่า | ทำอะไร |
 |---|---|---|
-| `access_token` | 15 นาที | แนบไป NestJS |
-| `refresh_token` | 7 วัน | ต่ออายุ + เป็นตัวชี้ว่ายัง login อยู่ |
-| `auth_user` | 7 วัน | ข้อมูลโชว์ใน UI (ไม่ใช่ credential) |
+| `JwtAuthGuard` | *คุณคือใคร* | อ่าน `access_token` จาก Cookie header → verify → แปะ `request.user` |
+| `PermissionGuard` | *กำลังสวมหมวกอะไร* | อ่าน `@RequirePermission()` → เทียบกับ `request.user.permissions` |
+
+ลำดับสำคัญ: `PermissionGuard` ต้องมาหลัง เพราะอ่าน `request.user` ที่ตัวแรกแปะไว้
+
+**`@Public()` ที่ใส่ไว้**: `register`, `user/login`, `admin/login`, `refresh`, `logout`
+
+> `refresh` กับ `logout` ต้อง public — สองตัวนี้ถูกเรียกตอน access token **หมดอายุไปแล้ว** ถ้า guard บล็อกจะต่ออายุไม่ได้เลย ทั้งคู่ตรวจ refresh token ด้วยตัวเองอยู่แล้ว
+
+**`@CurrentUser()`** คือทางเดียวที่ควรได้ user id — ห้ามรับจาก body หรือ query เด็ดขาด ไม่งั้นจองแทนคนอื่นได้
+
+> `PermissionGuard` ไม่ใช่ security boundary ในดีไซน์นี้ — ทุกบัญชีสลับเป็น admin ได้อยู่แล้ว มันเป็น **mode guard** ว่า token กำลังสวมหมวกอะไร ส่วน `JwtAuthGuard` เป็น security จริง
 
 ### Token revocation
 
