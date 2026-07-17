@@ -1,10 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { ConfigService } from '@nestjs/config';
 import { Permission } from '@/common/constants/permission.constant';
 import { REFRESH_COOKIE } from '@/common/constants/cookie.constant';
 import type { VerifiedTokenPayload } from './types/token-payload.type';
@@ -18,28 +17,6 @@ describe('AuthController', () => {
     switch: jest.fn(),
     logout: jest.fn(),
   };
-  const configServiceMock = {
-    getOrThrow: jest.fn((key: string) => {
-      const values: Record<string, string> = {
-        JWT_REFRESH_EXPIRES_IN: '7d',
-      };
-
-      return values[key];
-    }),
-
-    get: jest.fn((key: string) => {
-      const values: Record<string, string> = {
-        NODE_ENV: 'test',
-      };
-
-      return values[key];
-    }),
-  };
-
-  const responseMock = {
-    cookie: jest.fn(),
-    clearCookie: jest.fn(),
-  } as unknown as Response;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -48,10 +25,6 @@ describe('AuthController', () => {
         {
           provide: AuthService,
           useValue: authServiceMock,
-        },
-        {
-          provide: ConfigService,
-          useValue: configServiceMock,
         },
       ],
     }).compile();
@@ -81,25 +54,15 @@ describe('AuthController', () => {
       });
     }
 
-    it('should set refresh cookie and return access token', async () => {
+    it('should return both tokens in the body', async () => {
       mockLogin([Permission.USER]);
 
-      const result = await controller.loginUser(
-        credentials,
-        responseMock,
-      );
+      const result = await controller.loginUser(credentials);
 
-      expect(responseMock.cookie).toHaveBeenCalledWith(
-        REFRESH_COOKIE,
-        'refresh-token',
-        expect.objectContaining({
-          httpOnly: true,
-          path: '/api/auth',
-        }),
-      );
-
+      // ไม่ตั้ง cookie เอง ผู้เรียกเป็นคนตัดสินใจว่าจะเก็บยังไง
       expect(result).toEqual({
         accessToken: 'access-token',
+        refreshToken: 'refresh-token',
         tokenType: 'Bearer',
         user: {
           id: 'user-id',
@@ -113,7 +76,7 @@ describe('AuthController', () => {
     it('should ask the service to sign a user role on user login', async () => {
       mockLogin([Permission.USER]);
 
-      await controller.loginUser(credentials, responseMock);
+      await controller.loginUser(credentials);
 
       expect(authServiceMock.login).toHaveBeenCalledWith(
         credentials,
@@ -125,10 +88,7 @@ describe('AuthController', () => {
       // เคสที่เคยพัง: role ถูกทับแค่ใน response body ส่วน token ยังเป็น user
       mockLogin([Permission.ADMIN]);
 
-      const result = await controller.loginAdmin(
-        credentials,
-        responseMock,
-      );
+      const result = await controller.loginAdmin(credentials);
 
       expect(authServiceMock.login).toHaveBeenCalledWith(
         credentials,
@@ -142,7 +102,7 @@ describe('AuthController', () => {
   });
 
   describe('refresh', () => {
-    it('should rotate refresh cookie and return new access token', async () => {
+    it('should return the rotated tokens in the body', async () => {
       const requestMock = {
         cookies: {
           [REFRESH_COOKIE]: 'old-refresh-token',
@@ -155,26 +115,16 @@ describe('AuthController', () => {
         tokenType: 'Bearer',
       });
 
-      const result = await controller.refresh(
-        requestMock,
-        responseMock,
-      );
+      const result = await controller.refresh(requestMock);
 
       expect(authServiceMock.refresh).toHaveBeenCalledWith(
         'old-refresh-token',
       );
 
-      expect(responseMock.cookie).toHaveBeenCalledWith(
-        REFRESH_COOKIE,
-        'new-refresh-token',
-        expect.objectContaining({
-          httpOnly: true,
-          path: '/api/auth',
-        }),
-      );
-
+      // refresh token ตัวใหม่ต้องกลับไปด้วย ตัวเก่าถูก revoke ไปแล้ว
       expect(result).toEqual({
         accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
         tokenType: 'Bearer',
       });
     });
@@ -185,7 +135,7 @@ describe('AuthController', () => {
       } as unknown as Request;
 
       await expect(
-        controller.refresh(requestMock, responseMock),
+        controller.refresh(requestMock),
       ).rejects.toThrow(UnauthorizedException);
 
       expect(authServiceMock.refresh).not.toHaveBeenCalled();
@@ -220,7 +170,7 @@ describe('AuthController', () => {
 
     it('should switch using the payload from the guard, not refresh', async () => {
       // เคยพัง: endpoint นี้ก๊อปมาจาก refresh เลยไปเรียก refresh()
-      await controller.switch(currentUser, responseMock);
+      await controller.switch(currentUser);
 
       expect(authServiceMock.switch).toHaveBeenCalledWith(
         currentUser,
@@ -228,23 +178,12 @@ describe('AuthController', () => {
       expect(authServiceMock.refresh).not.toHaveBeenCalled();
     });
 
-    it('should rotate the refresh cookie so the new role survives a refresh', async () => {
-      const result = await controller.switch(
-        currentUser,
-        responseMock,
-      );
-
-      expect(responseMock.cookie).toHaveBeenCalledWith(
-        REFRESH_COOKIE,
-        'switched-refresh-token',
-        expect.objectContaining({
-          httpOnly: true,
-          path: '/api/auth',
-        }),
-      );
+    it('should return the rotated refresh token so the new role survives a refresh', async () => {
+      const result = await controller.switch(currentUser);
 
       expect(result).toEqual({
         accessToken: 'switched-access-token',
+        refreshToken: 'switched-refresh-token',
         tokenType: 'Bearer',
         user: {
           id: 'user-id',
@@ -257,38 +196,31 @@ describe('AuthController', () => {
   });
 
   describe('logout', () => {
-    it('should revoke the refresh token and clear the cookie', async () => {
+    it('should revoke the refresh token', async () => {
       const requestMock = {
         cookies: {
           [REFRESH_COOKIE]: 'refresh-token',
         },
       } as unknown as Request;
 
-      await controller.logout(requestMock, responseMock);
+      await controller.logout(requestMock);
 
-      // ลบ cookie อย่างเดียวไม่พอ token ต้องถูก revoke ด้วย
+      // ลบ cookie เป็นหน้าที่ผู้เรียก ที่นี่ revoke ตัว token จริง
       expect(authServiceMock.logout).toHaveBeenCalledWith(
         'refresh-token',
       );
-
-      expect(responseMock.clearCookie).toHaveBeenCalledWith(
-        REFRESH_COOKIE,
-        expect.objectContaining({
-          httpOnly: true,
-          path: '/api/auth',
-        }),
-      );
     });
 
-    it('should still clear the cookie when there is no refresh token', async () => {
+    it('should stay quiet when there is no refresh token', async () => {
       const requestMock = {
         cookies: {},
       } as unknown as Request;
 
-      await controller.logout(requestMock, responseMock);
+      await expect(
+        controller.logout(requestMock),
+      ).resolves.toBeUndefined();
 
       expect(authServiceMock.logout).not.toHaveBeenCalled();
-      expect(responseMock.clearCookie).toHaveBeenCalled();
     });
   });
 });

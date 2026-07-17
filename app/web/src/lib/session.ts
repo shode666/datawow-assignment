@@ -1,11 +1,17 @@
 import { cookies } from 'next/headers';
 
-export const ACCESS_COOKIE = 'access_token';
-export const REFRESH_COOKIE = 'refresh_token';
-export const USER_COOKIE = 'auth_user';
+/**
+ * session ทั้งก้อนอยู่ใน cookie เดียว
+ *
+ * เดิมแยกเป็น access_token / refresh_token / auth_user แล้วเจอ 2 ปัญหา:
+ * - แต่ละตัวหมดอายุคนละเวลา ทำให้มีจังหวะที่ session ครึ่งๆ กลางๆ
+ * - โค้ดอ่าน/parse กระจาย 4 ที่ แล้ว drift กันจนพัง
+ *
+ * รวมเป็นก้อนเดียวแล้วหมดอายุพร้อมกัน และ parse ที่เดียวคือที่นี่
+ */
+export const SESSION_COOKIE = 'session';
 
-const ACCESS_MAX_AGE = 15 * 60;
-const REFRESH_MAX_AGE = 7 * 24 * 60 * 60;
+const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
 
 export type SessionUser = {
   id: string;
@@ -14,70 +20,59 @@ export type SessionUser = {
   permissions: number[];
 };
 
+export type Session = {
+  accessToken: string;
+  refreshToken: string;
+  user: SessionUser;
+};
+
 const cookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
   path: '/',
+  maxAge: SESSION_MAX_AGE,
 };
 
 /**
- * Nest คืน refresh token มาทาง Set-Cookie เท่านั้น ไม่ได้อยู่ใน body
- * และ fetch ฝั่ง server ไม่ forward ต่อให้ browser จึงต้องดึงออกมาเอง
+ * cookie เก็บ JSON ที่ผ่าน base64 มา
+ *
+ * JSON ดิบมีอักขระที่ cookie ต้อง percent-encode (`{` `"` `,` และภาษาไทยใน fullName)
+ * ซึ่งเคยทำให้ decode ผิดพลาดมาแล้ว base64 ตัดปัญหานั้นทิ้ง
  */
-export function readRefreshToken(
-  response: Response,
-): string | undefined {
-  const header = response.headers
-    .getSetCookie()
-    .find((cookie) =>
-      cookie.startsWith(`${REFRESH_COOKIE}=`),
-    );
-
-  if (!header) {
-    return undefined;
-  }
-
-  const value = header
-    .split(';')[0]
-    .slice(`${REFRESH_COOKIE}=`.length);
-
-  return value || undefined;
+function encode(session: Session): string {
+  return Buffer.from(JSON.stringify(session)).toString(
+    'base64url',
+  );
 }
 
-export async function writeSession(input: {
-  accessToken: string;
-  refreshToken?: string;
-  user?: SessionUser;
-}) {
-  const store = await cookies();
+function decode(raw: string): Session | null {
+  try {
+    const json = Buffer.from(raw, 'base64url').toString(
+      'utf8',
+    );
 
-  store.set(ACCESS_COOKIE, input.accessToken, {
-    ...cookieOptions,
-    maxAge: ACCESS_MAX_AGE,
-  });
-
-  // ข้อมูลโชว์อย่างเดียว ไม่ใช่ credential จึงอยู่ได้เท่าอายุ session
-  // ถ้าให้หมดพร้อม access token UI จะไม่รู้จัก user ทันทีที่ token หมดอายุ
-  if (input.user) {
-    store.set(USER_COOKIE, JSON.stringify(input.user), {
-      ...cookieOptions,
-      maxAge: REFRESH_MAX_AGE,
-    });
+    return JSON.parse(json) as Session;
+  } catch {
+    // cookie เสียหรือมาจาก session รุ่นเก่า ถือว่าไม่ได้ login
+    return null;
   }
+}
 
-  if (input.refreshToken) {
-    store.set(REFRESH_COOKIE, input.refreshToken, {
-      ...cookieOptions,
-      maxAge: REFRESH_MAX_AGE,
-    });
-  }
+export async function readSession(): Promise<Session | null> {
+  const raw = (await cookies()).get(SESSION_COOKIE)?.value;
+
+  return raw ? decode(raw) : null;
+}
+
+export async function writeSession(session: Session) {
+  (await cookies()).set(
+    SESSION_COOKIE,
+    encode(session),
+    cookieOptions,
+  );
 }
 
 export async function clearSession() {
-  const store = await cookies();
-
-  store.delete(ACCESS_COOKIE);
-  store.delete(USER_COOKIE);
-  store.delete(REFRESH_COOKIE);
+  (await cookies()).delete(SESSION_COOKIE);
 }

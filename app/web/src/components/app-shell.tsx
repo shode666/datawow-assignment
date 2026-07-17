@@ -20,16 +20,11 @@ import {
   modeHome,
   type ViewMode,
 } from '@/config/routes';
+import { Permission } from '@/config/permission';
 import apiFetch from '@/lib/api-fetch';
+import type { SessionUser } from '@/lib/session';
 
 const { Text, Title } = Typography;
-
-type User = {
-  id: string;
-  email: string;
-  fullName: string;
-  permissions: number[];
-};
 
 type MenuItem = {
   key: string;
@@ -39,7 +34,7 @@ type MenuItem = {
 };
 
 type AppShellProps = {
-  user: User|null;
+  user: SessionUser;
   children: React.ReactNode;
 };
 
@@ -54,7 +49,9 @@ export function AppShell({
   const [switching, setSwitching] = useState(false);
 
   // role ที่สวมอยู่จริงมาจาก token ไม่ใช่จาก URL ที่เปิดค้างไว้
-  const activeMode: ViewMode = user?.permissions.includes(2)
+  const activeMode: ViewMode = user?.permissions.includes(
+    Permission.ADMIN,
+  )
     ? 'admin'
     : 'user';
 

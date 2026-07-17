@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { callApi } from '@/lib/api';
 import {
   type SessionUser,
-  readRefreshToken,
   writeSession,
 } from '@/lib/session';
 
@@ -17,6 +16,7 @@ function isRole(value: string): value is Role {
 
 type LoginResponse = {
   accessToken: string;
+  refreshToken: string;
   tokenType: 'Bearer';
   user: SessionUser;
 };
@@ -49,7 +49,7 @@ export async function POST(
 
   await writeSession({
     accessToken: login.accessToken,
-    refreshToken: readRefreshToken(result.response),
+    refreshToken: login.refreshToken,
     user: login.user,
   });
 

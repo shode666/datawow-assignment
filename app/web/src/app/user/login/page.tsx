@@ -1,15 +1,11 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { AuthLayout } from '@/features/auth/auth-layout';
 import { LoginForm } from '@/features/auth/login-form';
-import { REFRESH_COOKIE } from '@/lib/session';
+import { readSession } from '@/lib/session';
 
 export default async function UserLoginPage() {
-  const cookieStore = await cookies();
-  const refreshToken = cookieStore.get(REFRESH_COOKIE);
-
-  if (refreshToken) {
+  if (await readSession()) {
     redirect('/list');
   }
 

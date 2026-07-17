@@ -1,35 +1,33 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 import { callApi } from '@/lib/api';
 import {
-  ACCESS_COOKIE,
   type SessionUser,
-  readRefreshToken,
+  readSession,
   writeSession,
 } from '@/lib/session';
+import { ACCESS_COOKIE } from '@/lib/api-cookie';
 
 type SwitchResponse = {
   accessToken: string;
+  refreshToken: string;
   tokenType: 'Bearer';
   user: SessionUser;
 };
 
 export async function POST() {
-  const cookieStore = await cookies();
-  const accessToken =
-    cookieStore.get(ACCESS_COOKIE)?.value;
+  const session = await readSession();
 
-  if (!accessToken) {
+  if (!session) {
     return NextResponse.json(
-      { message: 'Access token is missing' },
+      { message: 'Not signed in' },
       { status: 401 },
     );
   }
 
   const result = await callApi<SwitchResponse>(
     '/auth/switch',
-    { cookie: `${ACCESS_COOKIE}=${accessToken}` },
+    { cookie: `${ACCESS_COOKIE}=${session.accessToken}` },
   );
 
   if (!result.ok) {
@@ -42,7 +40,7 @@ export async function POST() {
 
   await writeSession({
     accessToken: switched.accessToken,
-    refreshToken: readRefreshToken(result.response),
+    refreshToken: switched.refreshToken,
     user: switched.user,
   });
 

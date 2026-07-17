@@ -1,34 +1,32 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 import { callApi } from '@/lib/api';
 import {
-  REFRESH_COOKIE,
   clearSession,
-  readRefreshToken,
+  readSession,
   writeSession,
 } from '@/lib/session';
+import { REFRESH_COOKIE } from '@/lib/api-cookie';
 
 type RefreshResponse = {
   accessToken: string;
+  refreshToken: string;
   tokenType: 'Bearer';
 };
 
 export async function POST() {
-  const cookieStore = await cookies();
-  const refreshToken =
-    cookieStore.get(REFRESH_COOKIE)?.value;
+  const session = await readSession();
 
-  if (!refreshToken) {
+  if (!session) {
     return NextResponse.json(
-      { message: 'Refresh token is missing' },
+      { message: 'Not signed in' },
       { status: 401 },
     );
   }
 
   const result = await callApi<RefreshResponse>(
     '/auth/refresh',
-    { cookie: `${REFRESH_COOKIE}=${refreshToken}` },
+    { cookie: `${REFRESH_COOKIE}=${session.refreshToken}` },
   );
 
   if (!result.ok) {
@@ -42,9 +40,11 @@ export async function POST() {
 
   const refreshed = result.body as RefreshResponse;
 
+  // user ไม่เปลี่ยนตอน refresh คงของเดิมไว้
   await writeSession({
     accessToken: refreshed.accessToken,
-    refreshToken: readRefreshToken(result.response),
+    refreshToken: refreshed.refreshToken,
+    user: session.user,
   });
 
   return NextResponse.json({

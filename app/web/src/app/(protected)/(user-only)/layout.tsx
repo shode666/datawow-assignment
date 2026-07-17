@@ -1,34 +1,20 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import {
-  type SessionUser,
-  USER_COOKIE,
-} from '@/lib/session';
+import { Permission } from '@/config/permission';
+import { readSession } from '@/lib/session';
 
 export default async function UserOnlyLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies();
-  const rawUser = cookieStore.get(USER_COOKIE)?.value;
+  const session = await readSession();
 
-  if (!rawUser) {
+  if (!session) {
     redirect('/role-select');
   }
 
-  let user: SessionUser;
-
-  try {
-    user = JSON.parse(decodeURIComponent(rawUser)) as SessionUser;
-  } catch {
-    redirect('/role-select');
-  }
-
-  const isUser = user.permissions.includes(1);
-
-  if (!isUser) {
+  if (!session.user.permissions.includes(Permission.USER)) {
     redirect('/admin');
   }
 

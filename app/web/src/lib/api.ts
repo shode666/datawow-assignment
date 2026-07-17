@@ -6,8 +6,6 @@ export type ApiResult<T> = {
   ok: boolean;
   status: number;
   body: T | ApiError;
-  /** เก็บไว้ให้ readRefreshToken() แกะ Set-Cookie ที่ NestJS ส่งกลับมา */
-  response: Response;
 };
 
 type CallOptions = {
@@ -54,7 +52,6 @@ export async function callApi<T>(
     ok: response.ok,
     status: response.status,
     body: await readBody<T>(response),
-    response,
   };
 }
 
