@@ -3,7 +3,7 @@ import {
   InboxOutlined,
 } from '@ant-design/icons';
 
-export type ViewMode = 'user' | 'admin';
+import type { ViewMode } from './routes';
 
 export type NavigationRoute = {
   key: string;
@@ -15,11 +15,13 @@ export type NavigationRoute = {
 
 export const navigationRoutes: NavigationRoute[] = [
   {
-    key: '/',
+    key: '/list',
     label: 'Home',
     mode: 'user',
     icon: <HomeOutlined />,
-    match: (pathname) => pathname === '/',
+    match: (pathname) =>
+      pathname === '/list' ||
+      pathname.startsWith('/list/'),
   },
   {
     key: '/admin',
@@ -40,8 +42,3 @@ export const navigationRoutes: NavigationRoute[] = [
       pathname.startsWith('/history/'),
   },
 ];
-
-export const modeHome: Record<ViewMode, string> = {
-  user: '/',
-  admin: '/admin',
-};

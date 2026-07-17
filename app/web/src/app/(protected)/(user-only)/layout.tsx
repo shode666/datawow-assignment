@@ -1,31 +1,29 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-type AuthUser = {
-  id: string;
-  email: string;
-  fullName: string;
-  permissions: number[];
-};
+import {
+  type SessionUser,
+  USER_COOKIE,
+} from '@/lib/session';
 
-export default async function AdminOnlyLayout({
+export default async function UserOnlyLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const rawUser = cookieStore.get('auth_user')?.value;
+  const rawUser = cookieStore.get(USER_COOKIE)?.value;
 
   if (!rawUser) {
-    redirect('/login');
+    redirect('/role-select');
   }
 
-  let user: AuthUser;
+  let user: SessionUser;
 
   try {
-    user = JSON.parse(decodeURIComponent(rawUser)) as AuthUser;
+    user = JSON.parse(decodeURIComponent(rawUser)) as SessionUser;
   } catch {
-    redirect('/login');
+    redirect('/role-select');
   }
 
   const isUser = user.permissions.includes(1);

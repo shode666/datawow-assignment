@@ -15,9 +15,12 @@ import {
   Menu,
   Typography,
 } from 'antd';
-import { modeHome,
-  navigationRoutes,
-  type ViewMode } from '@/config/navigation';
+import { navigationRoutes } from '@/config/navigation';
+import {
+  modeHome,
+  type ViewMode,
+} from '@/config/routes';
+import apiFetch from '@/lib/api-fetch';
 
 const { Text, Title } = Typography;
 
@@ -26,6 +29,13 @@ type User = {
   email: string;
   fullName: string;
   permissions: number[];
+};
+
+type MenuItem = {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+  disabled?: boolean;
 };
 
 type AppShellProps = {
@@ -41,48 +51,73 @@ export function AppShell({
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
-  const isAdmin = user?.permissions.includes(2) ?? false;
+  // role ที่สวมอยู่จริงมาจาก token ไม่ใช่จาก URL ที่เปิดค้างไว้
+  const activeMode: ViewMode = user?.permissions.includes(2)
+    ? 'admin'
+    : 'user';
 
   const currentRoute =
   navigationRoutes.find((route) =>
     route.match(pathname),
   ) ?? navigationRoutes[0];
 
-  const viewMode: ViewMode = currentRoute.mode;
   const selectedKey = currentRoute.key;
 
   const menuItems = useMemo(() => {
-  const items = navigationRoutes
-    .filter((route) => route.mode === viewMode)
+  const items: MenuItem[] = navigationRoutes
+    .filter((route) => route.mode === activeMode)
     .map((route) => ({
       key: route.key,
       icon: route.icon,
       label: route.label,
     }));
 
-  if (isAdmin) {
     items.push({
       key: '/switch',
-      icon: <SyncOutlined />,
+      icon: <SyncOutlined spin={switching} />,
+      disabled: switching,
       label:
-        viewMode === 'admin'
+        activeMode === 'admin'
           ? 'Switch to User'
           : 'Switch to Admin',
     });
-  }
 
   return items;
-}, [isAdmin, viewMode]);
+}, [activeMode, switching]);
+
+  const switchRole = async () => {
+    if (switching) {
+      return;
+    }
+
+    try {
+      setSwitching(true);
+
+      // apiFetch: ถ้า access token หมดอายุจะ refresh แล้วยิงซ้ำให้เอง
+      const response = await apiFetch('/api/auth/switch', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const nextMode: ViewMode =
+        activeMode === 'admin' ? 'user' : 'admin';
+
+      // ต้องสลับ token ให้เสร็จก่อนค่อยเข้าหน้าใหม่ ไม่งั้นโดน layout guard เตะกลับ
+      router.push(modeHome[nextMode]);
+      router.refresh();
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   const handleMenuClick = ({ key }: {key: string}) => {
       if (key === '/switch') {
-        const nextMode: ViewMode =
-          viewMode === 'admin'
-            ? 'user'
-            : 'admin';
-
-        router.push(modeHome[nextMode]);
+        void switchRole();
         setDrawerOpen(false);
 
         return;
@@ -98,7 +133,7 @@ export function AppShell({
         method: 'POST',
       });
 
-      router.replace('/login');
+      router.replace('/role-select');
       router.refresh();
     } finally {
       setLoggingOut(false);

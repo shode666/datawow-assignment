@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import fetch from '@/lib/api-fetch'
 
 type RegisterBody = {
   email: string;

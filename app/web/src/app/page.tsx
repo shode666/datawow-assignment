@@ -1,17 +1,20 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import { modeHome } from '@/config/routes';
 import {
   type SessionUser,
+  REFRESH_COOKIE,
   USER_COOKIE,
 } from '@/lib/session';
 
-export default async function AdminOnlyLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default async function RootPage() {
   const cookieStore = await cookies();
+
+  if (!cookieStore.get(REFRESH_COOKIE)) {
+    redirect('/role-select');
+  }
+
   const rawUser = cookieStore.get(USER_COOKIE)?.value;
 
   if (!rawUser) {
@@ -26,11 +29,9 @@ export default async function AdminOnlyLayout({
     redirect('/role-select');
   }
 
-  const isAdmin = user.permissions.includes(2);
-
-  if (!isAdmin) {
-    redirect('/list');
-  }
-
-  return children;
+  redirect(
+    user.permissions.includes(2)
+      ? modeHome.admin
+      : modeHome.user,
+  );
 }

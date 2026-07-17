@@ -91,7 +91,7 @@ export function RegisterForm() {
         return;
       }
 
-      router.replace('/login?registered=true');
+      router.replace('/role-select');
     } catch (error) {
       console.error('Register error:', error);
 

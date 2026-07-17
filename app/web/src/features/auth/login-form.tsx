@@ -21,6 +21,10 @@ import {
   type LoginInput,
 } from './login.zod';
 import Link from 'next/link';
+import {
+  modeHome,
+  type ViewMode,
+} from '@/config/routes';
 
 const { Title, Text } = Typography;
 
@@ -36,7 +40,11 @@ function resolveErrorMessage(error: ErrorResponse): string {
   return error.message ?? 'ไม่สามารถเข้าสู่ระบบได้';
 }
 
-export function LoginForm() {
+type LoginFormProps = {
+  role: ViewMode;
+};
+
+export function LoginForm({ role }: LoginFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string>();
 
@@ -59,13 +67,16 @@ export function LoginForm() {
     setServerError(undefined);
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `/api/auth/${role}/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(input),
         },
-        body: JSON.stringify(input),
-      });
+      );
 
       const result = (await response.json()) as ErrorResponse;
 
@@ -74,7 +85,7 @@ export function LoginForm() {
         return;
       }
 
-      router.replace('/');
+      router.replace(modeHome[role]);
       router.refresh();
     } catch {
       setServerError('ไม่สามารถเชื่อมต่อกับระบบได้');
@@ -82,20 +93,15 @@ export function LoginForm() {
   };
 
   return (
-    <Card
-      className="w-full max-w-md shadow-xl"
-      styles={{
-        body: {
-          padding: 32,
-        },
-      }}
-    >
+    <div className="w-full max-w-md">
       <div className="mb-8 text-center">
         <Title
           level={2}
           className="!mb-2"
         >
-          Sign in
+          {role === 'admin'
+            ? 'Sign in as Admin'
+            : 'Sign in as User'}
         </Title>
 
         <Text type="secondary">
@@ -188,17 +194,23 @@ export function LoginForm() {
           block
           loading={isSubmitting}
         >
-          Sign in
+          Login as {role==='admin'?'Administrator':'User'}
         </Button>
       </form>
-      <div className="mt-6 text-center">
-          <Text type="secondary">
+      <div className="mt-6 space-y-1 text-center">
+          <Text type="secondary" className="block">
             ยังไม่มีบัญชี?{' '}
             <Link href="/register" className="font-medium">
               สมัครสมาชิก
             </Link>
           </Text>
+
+          <Text type="secondary" className="block">
+            <Link href="/role-select" className="font-medium">
+              เลือกระดับการเข้าใช้งานใหม่
+            </Link>
+          </Text>
         </div>
-    </Card>
+    </div>
   );
 }
