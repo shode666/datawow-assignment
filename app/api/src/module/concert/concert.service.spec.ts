@@ -39,10 +39,7 @@ describe('ConcertService', () => {
     jest.clearAllMocks();
 
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        ConcertService,
-        { provide: DATABASE, useValue: dbMock },
-      ],
+      providers: [ConcertService, { provide: DATABASE, useValue: dbMock }],
     }).compile();
 
     service = moduleRef.get(ConcertService);
@@ -181,6 +178,38 @@ describe('ConcertService', () => {
         pageSize: 10,
         total: 1,
         totalPages: 1,
+      });
+    });
+  });
+
+  // stats: select({sum}).from(concerts).where()  +  select({count}).from(reservations).where()
+  function mockStats(
+    seats: { totalSeats: number; totalReserved: number },
+    cancelled: number,
+  ) {
+    const whereSeats = jest.fn().mockResolvedValue([seats]);
+    const fromSeats = jest.fn().mockReturnValue({ where: whereSeats });
+
+    const whereCancel = jest
+      .fn()
+      .mockResolvedValue([{ totalCancelled: cancelled }]);
+    const fromCancel = jest.fn().mockReturnValue({ where: whereCancel });
+
+    dbMock.select
+      .mockReturnValueOnce({ from: fromSeats })
+      .mockReturnValueOnce({ from: fromCancel });
+  }
+
+  describe('stats', () => {
+    it('sums active seats and counts cancelled reservations', async () => {
+      mockStats({ totalSeats: 300, totalReserved: 40 }, 12);
+
+      const result = await service.stats();
+
+      expect(result).toEqual({
+        totalSeats: 300,
+        totalReserved: 40,
+        totalCancelled: 12,
       });
     });
   });

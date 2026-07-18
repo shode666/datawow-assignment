@@ -2,12 +2,13 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
-  Req,
+  Query,
 } from '@nestjs/common';
 import {
   type CreateConcertInput,
@@ -19,6 +20,10 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import type { VerifiedTokenPayload } from '../auth/types/token-payload.type';
 import { RequirePermission } from '@/common/decorators/require-permission.decorator';
 import { Permission } from '@/common/constants/permission.constant';
+import {
+  type ListConcertInput,
+  listConcertSchema,
+} from './dto/list-concert.zod';
 
 @Controller('concerts')
 export class ConcertController {
@@ -35,10 +40,26 @@ export class ConcertController {
     return this.concertService.create(input, currentUser.sub);
   }
 
+  // ⚠️ ต้องประกาศก่อน route ที่มี :id ไม่งั้น 'stats' จะโดนจับเป็น id
+  @Get('stats')
+  @RequirePermission(Permission.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  stats() {
+    return this.concertService.stats();
+  }
+
   @Delete(':id')
   @RequirePermission(Permission.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   softDelete(@Param('id', ParseUUIDPipe) id: string) {
     return this.concertService.softDelete(id);
+  }
+
+  @Get()
+  list(
+    @CurrentUser() currentUser: VerifiedTokenPayload,
+    @Query(new ZodValidationPipe(listConcertSchema)) query: ListConcertInput,
+  ) {
+    return this.concertService.list(currentUser.sub, query);
   }
 }

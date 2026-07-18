@@ -3,9 +3,14 @@ import { ConcertService } from './concert.service';
 import { ReservationService } from './reservation.service';
 import { ConcertController } from './concert.controller';
 import { ReservationController } from './reservation.controller';
+import { ReservationHistoryController } from './reservation-history.controller';
 
 @Module({
   providers: [ConcertService, ReservationService],
-  controllers: [ConcertController, ReservationController]
+  controllers: [
+    ConcertController,
+    ReservationController,
+    ReservationHistoryController,
+  ],
 })
 export class ConcertModule {}

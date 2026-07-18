@@ -27,9 +27,7 @@ describe('ConcertController', () => {
 
     const moduleRef = await Test.createTestingModule({
       controllers: [ConcertController],
-      providers: [
-        { provide: ConcertService, useValue: serviceMock },
-      ],
+      providers: [{ provide: ConcertService, useValue: serviceMock }],
     }).compile();
 
     controller = moduleRef.get(ConcertController);

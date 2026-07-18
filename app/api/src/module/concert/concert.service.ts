@@ -125,4 +125,31 @@ export class ConcertService {
       totalPages: Math.ceil(count / pageSize),
     };
   }
+
+  /**
+   * สถิติ 3 การ์ด (admin dashboard)
+   * - totalSeats / totalReserved — SUM จาก concerts ที่ยัง active เท่านั้น
+   *   (คอนเสิร์ตที่ soft-delete ไม่นับ ตาม decision log)
+   * - totalCancelled — COUNT reservations ที่ status='cancelled'
+   */
+  async stats() {
+    const [seats] = await this.db
+      .select({
+        totalSeats: sql<number>`coalesce(sum(${concerts.totalSeat}), 0)::int`,
+        totalReserved: sql<number>`coalesce(sum(${concerts.reservedSeat}), 0)::int`,
+      })
+      .from(concerts)
+      .where(eq(concerts.status, 'active'));
+
+    const [{ totalCancelled }] = await this.db
+      .select({ totalCancelled: sql<number>`count(*)::int` })
+      .from(reservations)
+      .where(eq(reservations.status, 'cancelled'));
+
+    return {
+      totalSeats: seats.totalSeats,
+      totalReserved: seats.totalReserved,
+      totalCancelled,
+    };
+  }
 }
