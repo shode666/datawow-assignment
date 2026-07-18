@@ -1,0 +1,82 @@
+# Production stack — `docker compose up --build` แล้วจบ
+#
+# ค่าที่ไม่ลับ (DB/Redis URL, JWT expiry) เขียน inline ตรงนี้ (commit ได้)
+# JWT secret ของ Nest ไม่ได้ commit — gen ตอน build ฝังใน image ที่ /app/.env (app/api/scripts/gen-nest-env.sh)
+# rebuild โค้ด: secret คงเดิม (cache) — clean rebuild (--no-cache/prune): secret ใหม่ ต้อง login ใหม่
+# web ไม่มี secret ใช้ค่า fix inline
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app_user -d app_db']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./app/api
+      target: build
+    environment:
+      DATABASE_URL: postgresql://app_user:app_password@postgres:5432/app_db
+    command: ['pnpm', 'exec', 'drizzle-kit', 'push', '--force']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: ./app/api
+      target: runtime
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://app_user:app_password@postgres:5432/app_db
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./app/web
+      target: runtime
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:3001/api
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
