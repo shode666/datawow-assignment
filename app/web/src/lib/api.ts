@@ -9,6 +9,8 @@ export type ApiResult<T> = {
 };
 
 type CallOptions = {
+  /** default 'POST' — คงพฤติกรรมเดิมของ caller ที่ไม่ได้ระบุ */
+  method?: string;
   body?: unknown;
   /** fetch ฝั่ง server ไม่ส่ง cookie ของ browser ต่อให้ ต้องแนบเอง */
   cookie?: string;
@@ -22,7 +24,7 @@ type CallOptions = {
  */
 export async function callApi<T>(
   path: string,
-  { body, cookie }: CallOptions = {},
+  { method, body, cookie }: CallOptions = {},
 ): Promise<ApiResult<T>> {
   const baseUrl = process.env.API_INTERNAL_URL;
 
@@ -41,7 +43,7 @@ export async function callApi<T>(
   }
 
   const response = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
+    method: method ?? 'POST',
     headers,
     body:
       body === undefined ? undefined : JSON.stringify(body),
