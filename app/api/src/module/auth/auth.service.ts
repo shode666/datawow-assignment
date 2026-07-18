@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'node:crypto';
 import type { StringValue } from 'ms';
@@ -264,29 +264,22 @@ export class AuthService {
     const normalizedEmail = input.email.trim().toLowerCase();
     const passwordHash = await bcrypt.hash(input.password, 12);
 
-    return this.db.transaction(async (tx) => {
-      // ป้องกัน request สมัครพร้อมกันแล้วกลายเป็น admin มากกว่า 1 คน
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(918273645)`,
-      );
+    const [existingUser] = await this.db
+      .select({
+        id: users.id,
+      })
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
 
-      const [existingUser] = await tx
-        .select({
-          id: users.id,
-        })
-        .from(users)
-        .where(eq(users.email, normalizedEmail))
-        .limit(1);
+    if (existingUser) {
+      throw new ConflictException('Email is already registered');
+    }
 
-      if (existingUser) {
-        throw new ConflictException(
-          'Email is already registered',
-        );
-      }
+    const permissions = [Permission.USER];
 
-      const permissions = [Permission.USER];
-
-      const [createdUser] = await tx
+    try {
+      const [createdUser] = await this.db
         .insert(users)
         .values({
           email: normalizedEmail,
@@ -303,12 +296,17 @@ export class AuthService {
         });
 
       if (!createdUser) {
-        throw new InternalServerErrorException(
-          'Unable to create user',
-        );
+        throw new InternalServerErrorException('Unable to create user');
       }
 
       return createdUser;
-    });
+    } catch (err) {
+      // unique(email) เป็นด่านสุดท้าย เผื่อ 2 request สมัคร email เดียวกันแทรกพร้อมกัน
+      if ((err as { code?: string }).code === '23505') {
+        throw new ConflictException('Email is already registered');
+      }
+
+      throw err;
+    }
   }
 }

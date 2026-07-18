@@ -182,13 +182,19 @@ describe('ConcertService', () => {
     });
   });
 
-  // stats: select({sum}).from(concerts).where()  +  select({count}).from(reservations).where()
+  // stats:
+  //   select({sum}).from(concerts).where()                          — seats
+  //   select({count}).from(reservations).where(notExists(subquery)) — cancel
+  //     โดย subquery = select().from(alias).where()  (สร้าง builder เฉยๆ ไม่ถูก await)
   function mockStats(
     seats: { totalSeats: number; totalReserved: number },
     cancelled: number,
   ) {
     const whereSeats = jest.fn().mockResolvedValue([seats]);
     const fromSeats = jest.fn().mockReturnValue({ where: whereSeats });
+
+    const whereSub = jest.fn().mockReturnValue({});
+    const fromSub = jest.fn().mockReturnValue({ where: whereSub });
 
     const whereCancel = jest
       .fn()
@@ -197,7 +203,8 @@ describe('ConcertService', () => {
 
     dbMock.select
       .mockReturnValueOnce({ from: fromSeats })
-      .mockReturnValueOnce({ from: fromCancel });
+      .mockReturnValueOnce({ from: fromCancel })
+      .mockReturnValueOnce({ from: fromSub });
   }
 
   describe('stats', () => {
