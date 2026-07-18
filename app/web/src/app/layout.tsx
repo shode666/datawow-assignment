@@ -13,6 +13,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-        <AntdRegistry>{children}</AntdRegistry>
+        <html lang="th">
+          <body>
+            <AntdRegistry>{children}</AntdRegistry>
+          </body>
+        </html>
   );
 }
