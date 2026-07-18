@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 
 import { ReservationService } from './reservation.service';
+import { ConcertListCacheService } from './concert-list-cache.service';
 import { DATABASE } from '@/infra/database/database.constants';
 
 describe('ReservationService', () => {
@@ -12,6 +13,12 @@ describe('ReservationService', () => {
     select: jest.fn(),
     update: jest.fn(),
     insert: jest.fn(),
+  };
+
+  const cacheMock = {
+    read: jest.fn().mockResolvedValue(null),
+    write: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
   };
 
   const concert = {
@@ -39,7 +46,11 @@ describe('ReservationService', () => {
     );
 
     const moduleRef = await Test.createTestingModule({
-      providers: [ReservationService, { provide: DATABASE, useValue: dbMock }],
+      providers: [
+        ReservationService,
+        { provide: DATABASE, useValue: dbMock },
+        { provide: ConcertListCacheService, useValue: cacheMock },
+      ],
     }).compile();
 
     service = moduleRef.get(ReservationService);

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { ConcertService } from './concert.service';
+import { ConcertListCacheService } from './concert-list-cache.service';
 import { DATABASE } from '@/infra/database/database.constants';
 
 describe('ConcertService', () => {
@@ -20,6 +21,13 @@ describe('ConcertService', () => {
         findFirst: jest.fn(),
       },
     },
+  };
+
+  // cache miss เสมอใน unit test → ทุกเทสต์ยิงลง DB path ตามเดิม
+  const cacheMock = {
+    read: jest.fn().mockResolvedValue(null),
+    write: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
   };
 
   const concert = {
@@ -39,7 +47,11 @@ describe('ConcertService', () => {
     jest.clearAllMocks();
 
     const moduleRef = await Test.createTestingModule({
-      providers: [ConcertService, { provide: DATABASE, useValue: dbMock }],
+      providers: [
+        ConcertService,
+        { provide: DATABASE, useValue: dbMock },
+        { provide: ConcertListCacheService, useValue: cacheMock },
+      ],
     }).compile();
 
     service = moduleRef.get(ConcertService);

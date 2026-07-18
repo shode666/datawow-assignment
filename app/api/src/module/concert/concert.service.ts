@@ -14,6 +14,25 @@ import { and, desc, eq, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { UpdateConcertInput } from './dto/update-concert.zod';
 import { ListConcertInput } from './dto/list-concert.zod';
+import { ConcertListCacheService } from './concert-list-cache.service';
+
+/** shape ที่ list() คืน — ใช้ typing ทั้ง DB path และ cache path ให้ตรงกัน */
+type ConcertListResult = {
+  data: {
+    id: string;
+    name: string;
+    description: string | null;
+    totalSeat: number;
+    reservedSeat: number;
+    version: number;
+    createdAt: Date;
+    myReservation: 'reserved' | 'cancelled' | null;
+  }[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
 
 @Injectable()
 export class ConcertService {
@@ -22,6 +41,7 @@ export class ConcertService {
   constructor(
     @Inject(DATABASE)
     private readonly db: AppDatabase,
+    private readonly cache: ConcertListCacheService,
   ) {}
 
   async create(input: CreateConcertInput, createdBy: string) {
@@ -30,6 +50,8 @@ export class ConcertService {
       .insert(concerts)
       .values({ ...input, createdBy })
       .returning();
+
+    await this.cache.invalidate(); // list มีคอนเสิร์ตใหม่แล้ว
     return concert;
   }
 
@@ -43,6 +65,8 @@ export class ConcertService {
     if (!deleted) {
       throw new NotFoundException('Concert not found or already deleted');
     }
+
+    await this.cache.invalidate(); // คอนเสิร์ตหายจาก list แล้ว
     return deleted;
   }
 
@@ -85,7 +109,19 @@ export class ConcertService {
     if (!existing) throw new NotFoundException('Concert not found or deleted');
     throw new ConflictException('Concert was modified by someone else');
   }
-  async list(userId: string, { page, pageSize }: ListConcertInput) {
+  async list(
+    userId: string,
+    { page, pageSize }: ListConcertInput,
+  ): Promise<ConcertListResult> {
+    const cached = await this.cache.read<ConcertListResult>(
+      userId,
+      page,
+      pageSize,
+    );
+    if (cached) {
+      return cached;
+    }
+
     const offset = (page - 1) * pageSize;
 
     const data = await this.db
@@ -118,13 +154,16 @@ export class ConcertService {
       .from(concerts)
       .where(eq(concerts.status, 'active'));
 
-    return {
+    const result: ConcertListResult = {
       data,
       page,
       pageSize,
       total: count,
       totalPages: Math.ceil(count / pageSize),
     };
+
+    await this.cache.write(userId, page, pageSize, result);
+    return result;
   }
 
   /**

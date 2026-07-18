@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { and, eq, ilike, isNotNull, sql, type SQL } from 'drizzle-orm';
 import { HistoryInput } from './dto/history-reservation.zod';
+import { ConcertListCacheService } from './concert-list-cache.service';
 
 /** Postgres SQLSTATE — unique_violation (จองซ้ำ ชน partial unique index) */
 const PG_UNIQUE_VIOLATION = '23505';
@@ -21,6 +22,7 @@ export class ReservationService {
   constructor(
     @Inject(DATABASE)
     private readonly db: AppDatabase,
+    private readonly cache: ConcertListCacheService,
   ) {}
 
   /**
@@ -31,7 +33,7 @@ export class ReservationService {
    * เช็คเต็ม/ไม่เต็มใน app แล้วค่อยเขียน — กันเกินได้เพราะไม่มีใครแทรกระหว่างนั้น
    */
   async reserve(concertId: string, userId: string) {
-    return this.db.transaction(async (tx) => {
+    const reservation = await this.db.transaction(async (tx) => {
       const [concert] = await tx
         .select()
         .from(concerts)
@@ -71,6 +73,9 @@ export class ReservationService {
         throw err;
       }
     });
+
+    await this.cache.invalidate(); // reserved_seat + myReservation ของ list เปลี่ยนแล้ว
+    return reservation;
   }
 
   /**
@@ -82,7 +87,7 @@ export class ReservationService {
    * `AND status='reserved'` สำคัญ: กันกด cancel ซ้ำแล้วลด counter หลายรอบ
    */
   async cancel(concertId: string, userId: string) {
-    return this.db.transaction(async (tx) => {
+    const cancelled = await this.db.transaction(async (tx) => {
       const [concert] = await tx
         .select()
         .from(concerts)
@@ -120,6 +125,9 @@ export class ReservationService {
 
       return cancelled;
     });
+
+    await this.cache.invalidate(); // reserved_seat + myReservation ของ list เปลี่ยนแล้ว
+    return cancelled;
   }
 
   /**

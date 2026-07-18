@@ -24,8 +24,8 @@ const ConcertInfoBox = (props: { concert: Concert, children: ReactNode}) => {
               <div className="flex items-end justify-between">
                 <span className="flex items-center gap-2 text-lg text-gray-800">
                   <UserOutlined />
-                  <Text disabled>{concert.reservedSeat}</Text>
-                  <Text>/ {concert.totalSeat}</Text>
+                  {/* <Text disabled>{concert.reservedSeat}</Text> cache make this line out of sync */}
+                  <Text>{concert.totalSeat}</Text>
 
                 </span>
                 {children}
