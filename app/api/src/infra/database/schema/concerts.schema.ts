@@ -25,6 +25,7 @@ export const concerts = pgTable('concerts',{
   updatedAt: timestamp('updated_at', {
     withTimezone: true,
   }).defaultNow().notNull(),
+  version: integer('version').notNull().default(1)
 },
 (table) => [
     check('total_seat_positive', sql`${table.totalSeat} > 0`),

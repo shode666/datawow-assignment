@@ -6,6 +6,7 @@ import { RedisModule } from './infra/redis/redis.module';
 import { AuthModule } from './module/auth/auth.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
+import { ConcertModule } from './module/concert/concert.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PermissionGuard } from './common/guards/permission.guard';
     DatabaseModule,
     RedisModule,
     AuthModule,
+    ConcertModule,
   ],
   providers: [
     // ป้องกันทุก endpoint ตั้งแต่แรก แล้วค่อยใช้ @Public() ยกเว้นเป็นรายตัว
