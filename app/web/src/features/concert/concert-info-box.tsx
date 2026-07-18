@@ -3,7 +3,7 @@ import { Typography } from "antd";
 import { UserOutlined } from "@ant-design/icons";
 import type { Concert } from "@/lib/concert";
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 
 const ConcertInfoBox = (props: { concert: Concert, children: ReactNode}) => {
   const {concert, children} = props;
@@ -24,7 +24,9 @@ const ConcertInfoBox = (props: { concert: Concert, children: ReactNode}) => {
               <div className="flex items-end justify-between">
                 <span className="flex items-center gap-2 text-lg text-gray-800">
                   <UserOutlined />
-                  {concert.totalSeat}
+                  <Text disabled>{concert.reservedSeat}</Text>
+                  <Text>/ {concert.totalSeat}</Text>
+
                 </span>
                 {children}
               </div>

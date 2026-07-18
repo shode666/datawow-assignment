@@ -69,7 +69,7 @@ export default function ConcertOverview({
       ) : (
         <div className="flex flex-col gap-4">
           {concerts.map((concert) => (
-            <ConcertInfoBox concert={concert}>
+            <ConcertInfoBox key={concert.id} concert={concert}>
               <Popconfirm
                   title="Delete this concert?"
                   okText="Delete"

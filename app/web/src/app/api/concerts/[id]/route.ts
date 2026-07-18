@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { callApi } from '@/lib/api';
 import { readSession } from '@/lib/session';
 import { ACCESS_COOKIE } from '@/lib/api-cookie';
+import { toNextResponse } from '@/lib/api-response';
 
 export async function DELETE(
   _request: Request,
@@ -20,5 +21,5 @@ export async function DELETE(
     cookie: `${ACCESS_COOKIE}=${session.accessToken}`,
   });
 
-  return NextResponse.json(result.body, { status: result.status });
+  return toNextResponse(result);
 }

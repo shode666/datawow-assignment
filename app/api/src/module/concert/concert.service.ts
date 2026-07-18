@@ -10,7 +10,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateConcertInput } from './dto/create-concert.zod';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, notExists, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { UpdateConcertInput } from './dto/update-concert.zod';
 import { ListConcertInput } from './dto/list-concert.zod';
 
@@ -130,7 +131,9 @@ export class ConcertService {
    * สถิติ 3 การ์ด (admin dashboard)
    * - totalSeats / totalReserved — SUM จาก concerts ที่ยัง active เท่านั้น
    *   (คอนเสิร์ตที่ soft-delete ไม่นับ ตาม decision log)
-   * - totalCancelled — COUNT reservations ที่ status='cancelled'
+   * - totalCancelled — นับแบบ distinct (concert, user) ไม่ใช่ทุกแถวที่ยกเลิก
+   *   (คน ๆ เดียวจอง/ยกเลิกคอนเสิร์ตเดิมหลายรอบ = นับ 1)
+   *   และตัด pair ที่ปัจจุบันกลับมาจองอยู่ (มีแถว status='reserved') ออก
    */
   async stats() {
     const [seats] = await this.db
@@ -141,10 +144,30 @@ export class ConcertService {
       .from(concerts)
       .where(eq(concerts.status, 'active'));
 
+    // subquery: pair (concert, user) นี้ยังมีการจอง active อยู่ไหม
+    const activeReservation = alias(reservations, 'active_reservation');
     const [{ totalCancelled }] = await this.db
-      .select({ totalCancelled: sql<number>`count(*)::int` })
+      .select({
+        totalCancelled: sql<number>`count(distinct (${reservations.concertId}, ${reservations.userId}))::int`,
+      })
       .from(reservations)
-      .where(eq(reservations.status, 'cancelled'));
+      .where(
+        and(
+          eq(reservations.status, 'cancelled'),
+          notExists(
+            this.db
+              .select({ one: sql`1` })
+              .from(activeReservation)
+              .where(
+                and(
+                  eq(activeReservation.concertId, reservations.concertId),
+                  eq(activeReservation.userId, reservations.userId),
+                  eq(activeReservation.status, 'reserved'),
+                ),
+              ),
+          ),
+        ),
+      );
 
     return {
       totalSeats: seats.totalSeats,
