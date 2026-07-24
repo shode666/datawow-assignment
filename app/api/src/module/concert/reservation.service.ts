@@ -32,7 +32,7 @@ export class ReservationService {
    * คนกดพร้อมกันจะเข้าคิวทีละคน อ่านค่า reserved_seat ที่ล่าสุดเสมอ
    * เช็คเต็ม/ไม่เต็มใน app แล้วค่อยเขียน — กันเกินได้เพราะไม่มีใครแทรกระหว่างนั้น
    */
-  async reserve(concertId: string, userId: string) {
+  async reserve(concertId: string, userId: string, seat: number) {
     const reservation = await this.db.transaction(async (tx) => {
       const [concert] = await tx
         .select()
@@ -44,22 +44,23 @@ export class ReservationService {
       if (!concert) {
         throw new NotFoundException('Concert not found');
       }
-      if (concert.reservedSeat >= concert.totalSeat) {
-        throw new ConflictException('Concert is full');
+      // ที่นั่งคงเหลือต้องพอกับจำนวนที่ขอจอง (ถือ lock อยู่ ค่าไม่มีใครแทรก)
+      if (concert.reservedSeat + seat > concert.totalSeat) {
+        throw new ConflictException('Not enough seats available');
       }
 
       try {
         // 1) สร้าง reservation ก่อน — ชน partial unique index = จองซ้ำ
         const [reservation] = await tx
           .insert(reservations)
-          .values({ concertId, userId })
+          .values({ concertId, userId, seat })
           .returning();
 
         // 2) แล้วค่อยสะท้อนใน counter (ถือ lock อยู่ ค่าไม่มีใครแทรก)
         await tx
           .update(concerts)
           .set({
-            reservedSeat: concert.reservedSeat + 1,
+            reservedSeat: concert.reservedSeat + seat,
             updatedAt: new Date(),
           })
           .where(eq(concerts.id, concertId));
@@ -118,7 +119,7 @@ export class ReservationService {
       await tx
         .update(concerts)
         .set({
-          reservedSeat: concert.reservedSeat - 1,
+          reservedSeat: concert.reservedSeat - cancelled.seat,
           updatedAt: new Date(),
         })
         .where(eq(concerts.id, concertId));

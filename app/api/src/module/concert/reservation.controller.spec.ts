@@ -37,10 +37,10 @@ describe('ReservationController', () => {
     it('passes concertId and the current user id to the service', async () => {
       serviceMock.reserve.mockResolvedValue({ id: 'res-1' });
 
-      const result = await controller.reserve('concert-1', currentUser);
+      const result = await controller.reserve('concert-1', { seat: 2 }, currentUser);
 
-      // userId มาจาก token (sub) ไม่ใช่ body/query
-      expect(serviceMock.reserve).toHaveBeenCalledWith('concert-1', 'user-1');
+      // userId มาจาก token (sub) ไม่ใช่ body/query, seat มาจาก validated input
+      expect(serviceMock.reserve).toHaveBeenCalledWith('concert-1', 'user-1', 2);
       expect(result).toEqual({ id: 'res-1' });
     });
   });

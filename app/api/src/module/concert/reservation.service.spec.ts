@@ -32,6 +32,7 @@ describe('ReservationService', () => {
     id: 'res-1',
     concertId: 'concert-1',
     userId: 'user-1',
+    seat: 1,
     status: 'reserved',
     cancelledAt: null,
     createdAt: new Date(),
@@ -172,20 +173,39 @@ describe('ReservationService', () => {
       dbMock.update.mockReturnValue({ set: updateNoReturning().set });
       insertReturning([reservation]);
 
-      const result = await service.reserve('concert-1', 'user-1');
+      const result = await service.reserve('concert-1', 'user-1', 1);
 
       expect(sel.forUpdate).toHaveBeenCalled(); // FOR UPDATE ถูกเรียก
       expect(dbMock.insert).toHaveBeenCalled();
       expect(result).toEqual(reservation);
     });
 
-    it('throws 409 when the concert is full', async () => {
-      selectForUpdate([{ ...concert, reservedSeat: 100, totalSeat: 100 }]);
+    it('reserves multiple seats and bumps the counter by that amount', async () => {
+      selectForUpdate([concert]); // reservedSeat: 5, totalSeat: 100
+      const values = insertReturning([{ ...reservation, seat: 4 }]).values;
+      const concertUpdate = updateNoReturning();
+      dbMock.update.mockReturnValue({ set: concertUpdate.set });
 
-      await expect(service.reserve('concert-1', 'user-1')).rejects.toThrow(
+      await service.reserve('concert-1', 'user-1', 4);
+
+      // insert ถือ seat = 4
+      expect(values).toHaveBeenCalledWith(
+        expect.objectContaining({ seat: 4 }),
+      );
+      // counter บวกตามจำนวนที่จอง: 5 + 4 = 9
+      expect(concertUpdate.set).toHaveBeenCalledWith(
+        expect.objectContaining({ reservedSeat: 9 }),
+      );
+    });
+
+    it('throws 409 when there are not enough seats left', async () => {
+      // เหลือ 2 ที่ (98/100) แต่ขอจอง 3
+      selectForUpdate([{ ...concert, reservedSeat: 98, totalSeat: 100 }]);
+
+      await expect(service.reserve('concert-1', 'user-1', 3)).rejects.toThrow(
         ConflictException,
       );
-      // เต็มแล้ว → ไม่แตะ counter / ไม่ insert
+      // ที่ไม่พอ → ไม่แตะ counter / ไม่ insert
       expect(dbMock.update).not.toHaveBeenCalled();
       expect(dbMock.insert).not.toHaveBeenCalled();
     });
@@ -193,7 +213,7 @@ describe('ReservationService', () => {
     it('throws 404 when the concert is gone or deleted', async () => {
       selectForUpdate([]);
 
-      await expect(service.reserve('concert-1', 'user-1')).rejects.toThrow(
+      await expect(service.reserve('concert-1', 'user-1', 1)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -202,7 +222,7 @@ describe('ReservationService', () => {
       selectForUpdate([concert]);
       insertReject({ code: '23505' });
 
-      await expect(service.reserve('concert-1', 'user-1')).rejects.toThrow(
+      await expect(service.reserve('concert-1', 'user-1', 1)).rejects.toThrow(
         ConflictException,
       );
       // ชน dup ก่อนแตะ counter → update ไม่ถูกเรียก

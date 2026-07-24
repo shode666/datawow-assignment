@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   HttpCode,
@@ -12,6 +13,8 @@ import type { VerifiedTokenPayload } from '../auth/types/token-payload.type';
 import { ReservationService } from './reservation.service';
 import { RequirePermission } from '@/common/decorators/require-permission.decorator';
 import { Permission } from '@/common/constants/permission.constant';
+import { type ReservationInput, reservationSchema } from './dto/reservation.zod';
+import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 /**
  * reserve/cancel เป็น user action — ไม่ใส่ @RequirePermission
@@ -29,9 +32,10 @@ export class ReservationController {
   @HttpCode(HttpStatus.CREATED)
   reserve(
     @Param('concertId', ParseUUIDPipe) concertId: string,
+    @Body(new ZodValidationPipe(reservationSchema)) input: ReservationInput,
     @CurrentUser() currentUser: VerifiedTokenPayload,
   ) {
-    return this.reservationService.reserve(concertId, currentUser.sub);
+    return this.reservationService.reserve(concertId, currentUser.sub, input.seat);
   }
 
   @Delete()

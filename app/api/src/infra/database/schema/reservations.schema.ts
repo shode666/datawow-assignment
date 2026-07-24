@@ -1,6 +1,8 @@
 import { pgTable,
           pgEnum,
+          check,
           uuid,
+          integer,
           index,
           uniqueIndex,
           timestamp } from "drizzle-orm/pg-core";
@@ -14,6 +16,7 @@ export const reservations = pgTable('reservations',{
   id: uuid('id').defaultRandom().primaryKey(),
   concertId: uuid('concert_id').notNull().references(()=>concerts.id),
   userId: uuid('user_id').notNull().references(()=>users.id),
+  seat: integer('seat').notNull().default(1),   // จำนวนที่นั่งที่ reservation นี้ถืออยู่
   status: reservationStatus('status').notNull().default('reserved'),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', {
@@ -21,6 +24,7 @@ export const reservations = pgTable('reservations',{
     }).defaultNow().notNull()
   },
 (table) => [
+  check('seat_positive', sql`${table.seat} > 0`),   // ต้องจองอย่างน้อย 1 ที่
   uniqueIndex('reservations_active_unique')
     .on(table.concertId, table.userId)
     .where(sql`${table.status} = 'reserved'`),      // กันจองซ้ำ แต่ cancelled ไม่กินโควตา
