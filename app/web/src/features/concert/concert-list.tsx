@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { App, Button, Empty, Popconfirm, Spin } from 'antd';
+import { App, Button, Empty, InputNumber, Popconfirm, Space, Spin } from 'antd';
 
 import apiFetch from '@/lib/api-fetch';
 import type { Concert, ConcertListResponse } from '@/lib/concert';
@@ -13,6 +13,8 @@ export default function ConcertList() {
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // จำนวนที่นั่งที่เลือกไว้ต่อคอนเสิร์ต (ยังไม่กด Reserve) — default 1
+  const [seatById, setSeatById] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,11 +36,13 @@ export default function ConcertList() {
     void load();
   }, [load]);
 
-  const handleReserve = async (id: string) => {
+  const handleReserve = async (id: string, seat: number) => {
     setPendingId(id);
     try {
       const res = await apiFetch(`/api/concerts/${id}/reservations`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seat }),
       });
       if (!res.ok) {
         message.error('Failed to reserve');
@@ -84,17 +88,31 @@ export default function ConcertList() {
       );
     }
 
-    const isFull = concert.reservedSeat >= concert.totalSeat;
+    const available = concert.totalSeat - concert.reservedSeat;
+    const isFull = available <= 0;
+    // clamp จำนวนที่เลือกให้ไม่เกินที่ว่าง (backend ก็เช็คซ้ำอีกชั้น)
+    const seat = Math.min(seatById[concert.id] ?? 1, Math.max(available, 1));
 
     return (
-      <Button
-        type="primary"
-        disabled={isFull}
-        loading={pendingId === concert.id}
-        onClick={() => handleReserve(concert.id)}
-      >
-        {isFull ? 'Full' : 'Reserve'}
-      </Button>
+      <Space>
+        <InputNumber
+          min={1}
+          max={available || 1}
+          value={seat}
+          disabled={isFull || pendingId === concert.id}
+          onChange={(value) =>
+            setSeatById((prev) => ({ ...prev, [concert.id]: value ?? 1 }))
+          }
+        />
+        <Button
+          type="primary"
+          disabled={isFull}
+          loading={pendingId === concert.id}
+          onClick={() => handleReserve(concert.id, seat)}
+        >
+          {isFull ? 'Full' : 'Reserve'}
+        </Button>
+      </Space>
     );
   };
 
